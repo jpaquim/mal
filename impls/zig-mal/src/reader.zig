@@ -72,64 +72,49 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     return form;
 }
 
+fn readerMacro(allocator: Allocator, reader: *Reader, symbol: []const u8) !*MalType {
+    const prefix = try MalType.makeSymbol(allocator, symbol);
+    const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
+    var list = try MalType.List.initCapacity(allocator, 2);
+    list.appendAssumeCapacity(prefix);
+    list.appendAssumeCapacity(form);
+    return MalType.makeList(allocator, list);
+}
+
 fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
-    return if (reader.peek()) |first_token|
-        switch (first_token[0]) {
-            '(' => try read_list(allocator, reader),
-            ')' => null,
-            '@' => blk: {
-                // reader macro: @form => (deref form)
-                const deref = try MalType.makeSymbol(allocator, "deref");
+    if (reader.peek()) |token|
+        switch (token[0]) {
+            '(' => return read_list(allocator, reader),
+            ')' => return null,
+            // reader macros:
+            // @form => (deref form)
+            '@' => {
                 _ = reader.next();
-                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                var list = try MalType.List.initCapacity(allocator, 2);
-                list.appendAssumeCapacity(deref);
-                list.appendAssumeCapacity(form);
-                break :blk try MalType.makeList(allocator, list);
+                return readerMacro(allocator, reader, "deref");
             },
-            '\'' => blk: {
-                // reader macro: 'form => (quote form)
-                const quote = try MalType.makeSymbol(allocator, "quote");
+            // 'form => (quote form)
+            '\'' => {
                 _ = reader.next();
-                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                var list = try MalType.List.initCapacity(allocator, 2);
-                list.appendAssumeCapacity(quote);
-                list.appendAssumeCapacity(form);
-                break :blk try MalType.makeList(allocator, list);
+                return readerMacro(allocator, reader, "quote");
             },
-            '`' => blk: {
-                // reader macro: `form => (quasiquote form)
-                const quasiquote = try MalType.makeSymbol(allocator, "quasiquote");
+            // `form => (quasiquote form)
+            '`' => {
                 _ = reader.next();
-                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                var list = try MalType.List.initCapacity(allocator, 2);
-                list.appendAssumeCapacity(quasiquote);
-                list.appendAssumeCapacity(form);
-                break :blk try MalType.makeList(allocator, list);
+                return readerMacro(allocator, reader, "quasiquote");
             },
-            '~' => blk: {
-                const token = reader.next() orelse return error.EndOfInput;
-                if (token.len > 1 and token[1] == '@') {
-                    // reader macro: ~@form => (splice-unquote form)
-                    const splice_unquote = try MalType.makeSymbol(allocator, "splice-unquote");
-                    const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                    var list = try MalType.List.initCapacity(allocator, 2);
-                    list.appendAssumeCapacity(splice_unquote);
-                    list.appendAssumeCapacity(form);
-                    break :blk try MalType.makeList(allocator, list);
+            // ~form => (unquote form)
+            // ~@form => (splice-unquote form)
+            '~' => {
+                _ = reader.next();
+                if (std.mem.eql(u8, token, "~@")) {
+                    return readerMacro(allocator, reader, "splice-unquote");
                 }
-                // reader macro: ~form => (unquote form)
-                const unquote = try MalType.makeSymbol(allocator, "unquote");
-                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                var list = try MalType.List.initCapacity(allocator, 2);
-                list.appendAssumeCapacity(unquote);
-                list.appendAssumeCapacity(form);
-                break :blk try MalType.makeList(allocator, list);
+                return readerMacro(allocator, reader, "unquote");
             },
-            else => try read_atom(allocator, reader),
+            else => return read_atom(allocator, reader),
         }
     else
-        error.EndOfInput;
+        return error.EndOfInput;
 }
 
 fn read_list(allocator: Allocator, reader: *Reader) !*MalType {
