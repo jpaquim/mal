@@ -96,6 +96,10 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                             .eval = EVAL,
                         });
                     }
+
+                    if (std.mem.eql(u8, symbol.value, "quote")) {
+                        return list.items[1];
+                    }
                 }
                 const evaled_ast = try eval_ast(allocator, current_ast, current_env);
                 const evaled_items = evaled_ast.list.items;

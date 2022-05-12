@@ -81,10 +81,20 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
                 // reader macro: @form => (deref form)
                 const deref = try MalType.makeSymbol(allocator, "deref");
                 _ = reader.next();
-                const next_form = try read_atom(allocator, reader);
+                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
                 var list = try MalType.List.initCapacity(allocator, 2);
                 list.appendAssumeCapacity(deref);
-                list.appendAssumeCapacity(next_form);
+                list.appendAssumeCapacity(form);
+                break :blk try MalType.makeList(allocator, list);
+            },
+            '\'' => blk: {
+                // reader macro: 'form => (quote form)
+                const quote = try MalType.makeSymbol(allocator, "quote");
+                _ = reader.next();
+                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
+                var list = try MalType.List.initCapacity(allocator, 2);
+                list.appendAssumeCapacity(quote);
+                list.appendAssumeCapacity(form);
                 break :blk try MalType.makeList(allocator, list);
             },
             else => try read_atom(allocator, reader),
