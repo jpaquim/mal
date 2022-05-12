@@ -20,6 +20,7 @@ pub fn build(b: *std.build.Builder) void {
         b.addExecutable("step4_if_fn_do", "src/step4_if_fn_do.zig"),
         b.addExecutable("step5_tco", "src/step5_tco.zig"),
         b.addExecutable("step6_file", "src/step6_file.zig"),
+        b.addExecutable("step7_quote", "src/step7_quote.zig"),
     }) |exe| {
         exe.setTarget(target);
         exe.setBuildMode(mode);
