@@ -349,6 +349,7 @@ pub fn main() anyerror!void {
                 error.EvalInvalidOperand => "Invalid operand",
                 error.EvalInvalidOperands => "Invalid operands, wrong function argument arity",
                 error.EvalNotSymbolOrFn => "tried to evaluate list where the first item is not a function or special form",
+                error.EvalIndexOutOfRange => "index out of range",
                 error.EnvSymbolNotFound => "symbol not found",
                 error.OutOfMemory => "out of memory",
                 else => @errorName(err),
