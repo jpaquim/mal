@@ -9,6 +9,11 @@ pub const EvalError = error{
     EvalDoInvalidOperands,
     EvalIfInvalidOperands,
     EvalLetInvalidOperands,
+    EvalQuoteInvalidOperands,
+    EvalQuasiquoteInvalidOperands,
+    EvalQuasiquoteexpandInvalidOperands,
+    EvalDefmacroInvalidOperands,
+    EvalMacroexpandInvalidOperands,
     EvalInvalidOperand,
     EvalInvalidOperands,
     EvalNotSymbolOrFn,
@@ -20,9 +25,9 @@ pub const MalType = union(enum) {
     pub const List = std.ArrayList(*MalType);
     pub const Number = i32;
 
-    const StrAlloc = struct { value: []const u8, allocator: Allocator };
-    pub const Symbol = StrAlloc;
-    pub const String = StrAlloc;
+    const Str = []const u8;
+    pub const String = Str;
+    pub const Symbol = Str;
 
     pub const Parameters = std.ArrayList(Symbol);
     pub const Primitive = union(enum) {
@@ -136,6 +141,7 @@ pub const MalType = union(enum) {
         body: *MalType,
         env: *Env,
         eval: fn (allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType,
+        is_macro: bool = false,
 
         pub fn apply(closure: Closure, allocator: Allocator, args: []*MalType) !*MalType {
             const parameters = closure.parameters.items;
@@ -145,7 +151,7 @@ pub const MalType = union(enum) {
             // convert from a list of MalType.Symbol to a list of valid symbol keys to use in environment init
             var binds = try std.ArrayList([]const u8).initCapacity(allocator, parameters.len);
             for (parameters) |parameter| {
-                binds.appendAssumeCapacity(parameter.value);
+                binds.appendAssumeCapacity(parameter);
             }
             var fn_env_ptr = try closure.env.initChildBindExprs(binds.items, args);
             return closure.eval(allocator, closure.body, fn_env_ptr);
@@ -198,11 +204,11 @@ pub const MalType = union(enum) {
     }
 
     pub fn makeString(allocator: Allocator, string: []const u8) !*MalType {
-        return make(allocator, .{ .string = .{ .value = string, .allocator = allocator } });
+        return make(allocator, .{ .string = string });
     }
 
     pub fn makeSymbol(allocator: Allocator, symbol: []const u8) !*MalType {
-        return make(allocator, .{ .symbol = .{ .value = symbol, .allocator = allocator } });
+        return make(allocator, .{ .symbol = symbol });
     }
 
     pub fn makeAtom(allocator: Allocator, value: *MalType) !*MalType {
@@ -296,8 +302,8 @@ pub const MalType = union(enum) {
         // check if values are of the same type
         return @enumToInt(self) == @enumToInt(other.*) and switch (self) {
             .number => |number| number == other.number,
-            .string => |string| std.mem.eql(u8, string.value, other.string.value),
-            .symbol => |symbol| std.mem.eql(u8, symbol.value, other.symbol.value),
+            .string => |string| std.mem.eql(u8, string, other.string),
+            .symbol => |symbol| std.mem.eql(u8, symbol, other.symbol),
             .t, .f, .nil => true,
             .list => |list| list.items.len == other.list.items.len and for (list.items) |item, i| {
                 if (!item.equals(other.list.items[i])) break false;
@@ -307,7 +313,7 @@ pub const MalType = union(enum) {
                 if (!closure.body.equals(other.closure.body)) break :blk false;
                 if (closure.parameters.items.len != other.closure.parameters.items.len) break :blk false;
                 for (closure.parameters.items) |item, i| {
-                    if (!std.mem.eql(u8, item.value, other.closure.parameters.items[i].value)) break :blk false;
+                    if (!std.mem.eql(u8, item, other.closure.parameters.items[i])) break :blk false;
                 } else break :blk true;
             },
             .primitive => |primitive| @enumToInt(primitive) == @enumToInt(other.primitive) and
@@ -317,7 +323,7 @@ pub const MalType = union(enum) {
     }
 
     pub fn isSymbol(self: Self, symbol: []const u8) bool {
-        return self == .symbol and std.mem.eql(u8, self.symbol.value, symbol);
+        return self == .symbol and std.mem.eql(u8, self.symbol, symbol);
     }
 
     pub fn isTruthy(self: Self) bool {

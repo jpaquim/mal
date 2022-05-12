@@ -148,17 +148,11 @@ fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
         else if (std.mem.eql(u8, token, "false"))
             .f
         else if (token[0] == '"') MalType{
-            .string = .{
-                .value = try replaceEscapeSequences(allocator, token[1 .. token.len - 1]),
-                .allocator = allocator,
-            },
+            .string = try replaceEscapeSequences(allocator, token[1 .. token.len - 1]),
         } else if (std.fmt.parseInt(i32, token, 10)) |int| MalType{
             .number = int,
         } else |_| MalType{
-            .symbol = .{
-                .value = try allocator.dupe(u8, token),
-                .allocator = allocator,
-            },
+            .symbol = try allocator.dupe(u8, token),
         }
     else
         return error.EndOfInput;

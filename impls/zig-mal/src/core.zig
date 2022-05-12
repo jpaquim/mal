@@ -102,7 +102,7 @@ pub fn println(allocator: Allocator, args: MalType.List) !*MalType {
 
 pub fn read_string(allocator: Allocator, param: *MalType) !*MalType {
     const string = try param.asString();
-    return if (reader.read_str(allocator, string.value)) |result| result else |err| switch (err) {
+    return if (reader.read_str(allocator, string)) |result| result else |err| switch (err) {
         error.EmptyInput => MalType.makeNil(allocator),
         else => err,
     };
@@ -110,7 +110,7 @@ pub fn read_string(allocator: Allocator, param: *MalType) !*MalType {
 
 pub fn slurp(allocator: Allocator, param: *MalType) !*MalType {
     const file_name = try param.asString();
-    const file = try std.fs.cwd().openFile(file_name.value, .{});
+    const file = try std.fs.cwd().openFile(file_name, .{});
     defer file.close();
     // TODO: revisit global max size definitions
     const max_size = 1 << 16; // 64KiB
