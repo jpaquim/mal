@@ -25,9 +25,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                 // apply phase
                 const first = list.items[0];
                 if (first.* == .symbol) {
-                    const symbol = first.symbol;
-
-                    if (std.mem.eql(u8, symbol.value, "def!")) {
+                    if (first.isSymbol("def!")) {
                         const rest = list.items[1..];
                         if (rest.len != 2) return error.EvalDefInvalidOperands;
                         const key_symbol = rest[0].asSymbol() catch return error.EvalDefInvalidOperands;
@@ -38,7 +36,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         return evaled_value;
                     }
 
-                    if (std.mem.eql(u8, symbol.value, "let*")) {
+                    if (first.isSymbol("let*")) {
                         const rest = list.items[1..];
                         if (rest.len != 2) return error.EvalLetInvalidOperands;
                         const bindings = rest[0].asList() catch return error.EvalLetInvalidOperands;
@@ -58,7 +56,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         continue;
                     }
 
-                    if (std.mem.eql(u8, symbol.value, "if")) {
+                    if (first.isSymbol("if")) {
                         const rest = list.items[1..];
                         if (rest.len != 2 and rest.len != 3) return error.EvalIfInvalidOperands;
                         const condition = rest[0];
@@ -72,7 +70,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         continue;
                     }
 
-                    if (std.mem.eql(u8, symbol.value, "do")) {
+                    if (first.isSymbol("do")) {
                         const do_len = list.items.len - 1;
                         if (do_len < 1) return error.EvalDoInvalidOperands;
                         const do_ast = try MalType.makeListFromSlice(allocator, list.items[1..do_len]);
@@ -81,7 +79,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         continue;
                     }
 
-                    if (std.mem.eql(u8, symbol.value, "fn*")) {
+                    if (first.isSymbol("fn*")) {
                         const parameters = list.items[1].asList() catch return error.EvalInvalidFnParamsList;
                         // convert from a list of MalType to a list of valid symbol keys to use in environment init
                         var binds = try std.ArrayList(MalType.Symbol).initCapacity(allocator, parameters.items.len);
@@ -97,15 +95,15 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         });
                     }
 
-                    if (std.mem.eql(u8, symbol.value, "quote")) {
+                    if (first.isSymbol("quote")) {
                         return list.items[1];
                     }
 
-                    if (std.mem.eql(u8, symbol.value, "quasiquoteexpand")) {
+                    if (first.isSymbol("quasiquoteexpand")) {
                         return quasiquote(allocator, list.items[1]);
                     }
 
-                    if (std.mem.eql(u8, symbol.value, "quasiquote")) {
+                    if (first.isSymbol("quasiquote")) {
                         current_ast = try quasiquote(allocator, list.items[1]);
                         continue;
                     }
