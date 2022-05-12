@@ -100,6 +100,15 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                     if (std.mem.eql(u8, symbol.value, "quote")) {
                         return list.items[1];
                     }
+
+                    if (std.mem.eql(u8, symbol.value, "quasiquoteexpand")) {
+                        return quasiquote(allocator, list.items[1]);
+                    }
+
+                    if (std.mem.eql(u8, symbol.value, "quasiquote")) {
+                        current_ast = try quasiquote(allocator, list.items[1]);
+                        continue;
+                    }
                 }
                 const evaled_ast = try eval_ast(allocator, current_ast, current_env);
                 const evaled_items = evaled_ast.list.items;
@@ -164,6 +173,46 @@ var repl_env: Env = undefined;
 
 fn eval(allocator: Allocator, ast: *MalType) EvalError!*MalType {
     return EVAL(allocator, ast, &repl_env);
+}
+
+fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
+    switch (ast.*) {
+        .list => |list| {
+            if (list.items[0].isSymbol("unquote")) {
+                return list.items[1];
+            }
+            var result = try MalType.makeListEmpty(allocator);
+            var i = list.items.len;
+            while (i > 0) {
+                i -= 1;
+                const element = list.items[i];
+                if (element.* == .list and element.list.items[0].isSymbol("splice-unquote")) {
+                    var result_list = try MalType.List.initCapacity(allocator, 3);
+                    const concat = try MalType.makeSymbol(allocator, "concat");
+                    result_list.appendAssumeCapacity(concat);
+                    result_list.appendAssumeCapacity(element.list.items[1]);
+                    result_list.appendAssumeCapacity(result);
+                    result = try MalType.makeList(allocator, result_list);
+                } else {
+                    var result_list = try MalType.List.initCapacity(allocator, 3);
+                    const cons = try MalType.makeSymbol(allocator, "cons");
+                    result_list.appendAssumeCapacity(cons);
+                    result_list.appendAssumeCapacity(try quasiquote(allocator, element));
+                    result_list.appendAssumeCapacity(result);
+                    result = try MalType.makeList(allocator, result_list);
+                }
+            }
+            return result;
+        },
+        .symbol => {
+            var result_list = try MalType.List.initCapacity(allocator, 2);
+            const quote = try MalType.makeSymbol(allocator, "quote");
+            result_list.appendAssumeCapacity(quote);
+            result_list.appendAssumeCapacity(ast);
+            return MalType.makeList(allocator, result_list);
+        },
+        else => return ast,
+    }
 }
 
 pub fn main() anyerror!void {

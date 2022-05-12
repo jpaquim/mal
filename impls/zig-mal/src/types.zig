@@ -316,6 +316,10 @@ pub const MalType = union(enum) {
         };
     }
 
+    pub fn isSymbol(self: Self, symbol: []const u8) bool {
+        return self == .symbol and std.mem.eql(u8, self.symbol.value, symbol);
+    }
+
     pub fn isTruthy(self: Self) bool {
         return !(self == .f or self == .nil);
     }

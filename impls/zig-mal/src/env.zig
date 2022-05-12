@@ -92,6 +92,11 @@ pub const Env = struct {
     }
 
     pub fn get(self: Self, symbol: Key) !*MalType {
-        return if (self.find(symbol)) |env| env.data.get(symbol) orelse unreachable else error.EnvSymbolNotFound;
+        if (self.find(symbol)) |env| {
+            return env.data.get(symbol) orelse unreachable;
+        } else {
+            std.debug.print("symbol not found: {s}\n", .{symbol});
+            return error.EnvSymbolNotFound;
+        }
     }
 };
