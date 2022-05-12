@@ -152,6 +152,29 @@ pub fn swap(allocator: Allocator, params: MalType.List) !*MalType {
     return result;
 }
 
+// TODO: move to linked lists to make this allocate less
+pub fn cons(allocator: Allocator, params: MalType.List) !*MalType {
+    const head = params.items[0];
+    const tail = params.items[1];
+    var result = try MalType.List.initCapacity(allocator, 1 + tail.list.items.len);
+    result.appendAssumeCapacity(head);
+    for (tail.list.items) |item| {
+        result.appendAssumeCapacity(item);
+    }
+    return MalType.makeList(allocator, result);
+}
+
+// TODO: move to linked lists to make this allocate less
+pub fn concat(allocator: Allocator, params: MalType.List) !*MalType {
+    var result = MalType.List.init(allocator);
+    for (params.items) |param| {
+        for ((try param.asList()).items) |nested| {
+            try result.append(nested);
+        }
+    }
+    return MalType.makeList(allocator, result);
+}
+
 pub const ns = .{
     .@"+" = add,
     .@"-" = subtract,
@@ -178,4 +201,6 @@ pub const ns = .{
     .@"deref" = deref,
     .@"reset!" = reset,
     .@"swap!" = swap,
+    .@"cons" = cons,
+    .@"concat" = concat,
 };
