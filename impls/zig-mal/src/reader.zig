@@ -97,6 +97,35 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
                 list.appendAssumeCapacity(form);
                 break :blk try MalType.makeList(allocator, list);
             },
+            '`' => blk: {
+                // reader macro: `form => (quasiquote form)
+                const quasiquote = try MalType.makeSymbol(allocator, "quasiquote");
+                _ = reader.next();
+                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
+                var list = try MalType.List.initCapacity(allocator, 2);
+                list.appendAssumeCapacity(quasiquote);
+                list.appendAssumeCapacity(form);
+                break :blk try MalType.makeList(allocator, list);
+            },
+            '~' => blk: {
+                const token = reader.next() orelse return error.EndOfInput;
+                if (token.len > 1 and token[1] == '@') {
+                    // reader macro: ~@form => (splice-unquote form)
+                    const splice_unquote = try MalType.makeSymbol(allocator, "splice-unquote");
+                    const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
+                    var list = try MalType.List.initCapacity(allocator, 2);
+                    list.appendAssumeCapacity(splice_unquote);
+                    list.appendAssumeCapacity(form);
+                    break :blk try MalType.makeList(allocator, list);
+                }
+                // reader macro: ~form => (unquote form)
+                const unquote = try MalType.makeSymbol(allocator, "unquote");
+                const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
+                var list = try MalType.List.initCapacity(allocator, 2);
+                list.appendAssumeCapacity(unquote);
+                list.appendAssumeCapacity(form);
+                break :blk try MalType.makeList(allocator, list);
+            },
             else => try read_atom(allocator, reader),
         }
     else
