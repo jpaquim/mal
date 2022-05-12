@@ -175,6 +175,33 @@ pub fn concat(allocator: Allocator, params: MalType.List) !*MalType {
     return MalType.makeList(allocator, result);
 }
 
+pub fn nth(param: *MalType, n: *MalType) !*MalType {
+    const index = @intCast(usize, try n.asNumber());
+    const param_list = try param.asList();
+    if (index >= param_list.items.len) return error.EvalIndexOutOfRange;
+    return param_list.items[index];
+}
+
+// TODO: move to linked lists to make this allocate less
+pub fn first(allocator: Allocator, param: *MalType) !*MalType {
+    if (param.* == .nil) return MalType.makeNil(allocator);
+    const param_list = try param.asList();
+    if (param_list.items.len == 0) return MalType.makeNil(allocator);
+    return param_list.items[0];
+}
+
+// TODO: move to linked lists to make this allocate less
+pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
+    if (param.* == .nil) return MalType.makeListEmpty(allocator);
+    const param_list = try param.asList();
+    if (param_list.items.len == 0) return MalType.makeListEmpty(allocator);
+    var result_list = try MalType.List.initCapacity(allocator, param_list.items.len - 1);
+    for (param_list.items[1..]) |item| {
+        result_list.appendAssumeCapacity(item);
+    }
+    return MalType.makeList(allocator, result_list);
+}
+
 pub const ns = .{
     .@"+" = add,
     .@"-" = subtract,
@@ -203,4 +230,7 @@ pub const ns = .{
     .@"swap!" = swap,
     .@"cons" = cons,
     .@"concat" = concat,
+    .@"nth" = nth,
+    .@"first" = first,
+    .@"rest" = rest,
 };

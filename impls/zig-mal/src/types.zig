@@ -19,6 +19,7 @@ pub const EvalError = error{
     EvalNotSymbolOrFn,
     EnvSymbolNotFound,
     EvalInvalidFnParamsList,
+    EvalIndexOutOfRange,
 } || Allocator.Error || MalType.Primitive.Error;
 
 pub const MalType = union(enum) {
