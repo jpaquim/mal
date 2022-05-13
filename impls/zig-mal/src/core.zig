@@ -251,6 +251,12 @@ pub fn symbol(allocator: Allocator, param: *MalType) !*MalType {
     return MalType.makeSymbol(allocator, try param.asString());
 }
 
+pub fn not_implemented(allocator: Allocator, params: MalType.List) !*MalType {
+    _ = allocator;
+    _ = params;
+    return error.NotImplemented;
+}
+
 pub const ns = .{
     .@"+" = add,
     .@"-" = subtract,
@@ -289,4 +295,12 @@ pub const ns = .{
     .@"false?" = is_false,
     .@"symbol?" = is_symbol,
     .@"symbol" = symbol,
+    .@"time-ms" = not_implemented,
+    .@"meta" = not_implemented,
+    .@"with-meta" = not_implemented,
+    .@"fn?" = not_implemented,
+    .@"string?" = not_implemented,
+    .@"number?" = not_implemented,
+    .@"seq" = not_implemented,
+    .@"conj" = not_implemented,
 };
