@@ -30,13 +30,15 @@ pub const EvalError = error{
 pub var current_exception: ?*MalType = null;
 
 pub const MalType = union(enum) {
-    pub const List = std.ArrayList(*MalType);
     pub const Number = i32;
 
     const Str = []const u8;
     pub const Keyword = Str;
     pub const String = Str;
     pub const Symbol = Str;
+
+    pub const List = std.ArrayList(*MalType);
+    pub const Vector = std.ArrayList(*MalType);
 
     pub const Parameters = std.ArrayList(Symbol);
     pub const Primitive = union(enum) {
@@ -187,11 +189,9 @@ pub const MalType = union(enum) {
     string: String,
     symbol: Symbol,
 
-    // TODO: keywords
-    // TODO: vectors
-    // TODO: hash-maps
-
     list: List,
+    vector: Vector,
+    // TODO: hash-maps
 
     // functions
     primitive: Primitive,
@@ -247,6 +247,26 @@ pub const MalType = union(enum) {
             list.appendAssumeCapacity(item);
         }
         return make(allocator, .{ .list = list });
+    }
+
+    pub fn makeVector(allocator: Allocator, vector: Vector) !*MalType {
+        return make(allocator, .{ .vector = vector });
+    }
+
+    pub fn makeVectorEmpty(allocator: Allocator) !*MalType {
+        return make(allocator, .{ .vector = Vector.init(allocator) });
+    }
+
+    pub fn makeVectorCapacity(allocator: Allocator, num: usize) !*MalType {
+        return make(allocator, .{ .vector = try Vector.initCapacity(allocator, num) });
+    }
+
+    pub fn makeVectorFromSlice(allocator: Allocator, slice: []*MalType) !*MalType {
+        var vector = try Vector.initCapacity(allocator, slice.len);
+        for (slice) |item| {
+            vector.appendAssumeCapacity(item);
+        }
+        return make(allocator, .{ .vector = vector });
     }
 
     pub fn makeNil(allocator: Allocator) !*MalType {
@@ -322,6 +342,9 @@ pub const MalType = union(enum) {
             .t, .f, .nil => true,
             .list => |list| list.items.len == other.list.items.len and for (list.items) |item, i| {
                 if (!item.equals(other.list.items[i])) break false;
+            } else true,
+            .vector => |vector| vector.items.len == other.vector.items.len and for (vector.items) |item, i| {
+                if (!item.equals(other.vector.items[i])) break false;
             } else true,
             .closure => |closure| blk: {
                 if (closure.env != other.closure.env) break :blk false;

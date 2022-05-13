@@ -84,8 +84,9 @@ fn readerMacro(allocator: Allocator, reader: *Reader, symbol: []const u8) !*MalT
 fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
     if (reader.peek()) |token|
         switch (token[0]) {
-            '(' => return read_list(allocator, reader),
-            ')' => return null,
+            '(' => return read_list(allocator, reader, .list),
+            '[' => return read_list(allocator, reader, .vector),
+            ')', ']' => return null,
             // reader macros:
             // @form => (deref form)
             '@' => {
@@ -117,8 +118,13 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
         return error.EndOfInput;
 }
 
-fn read_list(allocator: Allocator, reader: *Reader) !*MalType {
-    // skip over the first '(' token in the list
+const ListType = enum {
+    list,
+    vector,
+};
+
+fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalType {
+    // skip over the first '(', '[' token in the list
     _ = reader.next();
     var list = std.ArrayList(*MalType).init(allocator);
     // read the next forms until a matching ')' is found, or error otherwise
@@ -133,9 +139,12 @@ fn read_list(allocator: Allocator, reader: *Reader) !*MalType {
         }
         // no matching closing ')' parenthes, return error
     } else |_| return error.ListNoClosingTag;
-    // skip over the last ')' token in the list
+    // skip over the last ')', ']' token in the list
     _ = reader.next();
-    return MalType.makeList(allocator, list);
+    switch (list_type) {
+        .list => return MalType.makeList(allocator, list),
+        .vector => return MalType.makeVector(allocator, list),
+    }
 }
 
 fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
