@@ -236,6 +236,22 @@ pub fn map(allocator: Allocator, params: MalType.List) !*MalType {
     return MalType.makeList(allocator, result);
 }
 
+pub fn is_true(param: *MalType) bool {
+    return param.* == .t;
+}
+
+pub fn is_false(param: *MalType) bool {
+    return param.* == .f;
+}
+
+pub fn is_symbol(param: *MalType) bool {
+    return param.* == .symbol;
+}
+
+pub fn symbol(allocator: Allocator, param: *MalType) !*MalType {
+    return MalType.makeSymbol(allocator, try param.asString());
+}
+
 pub const ns = .{
     .@"+" = add,
     .@"-" = subtract,
@@ -270,4 +286,8 @@ pub const ns = .{
     .@"throw" = throw,
     .@"apply" = apply,
     .@"map" = map,
+    .@"true?" = is_true,
+    .@"false?" = is_false,
+    .@"symbol?" = is_symbol,
+    .@"symbol" = symbol,
 };
