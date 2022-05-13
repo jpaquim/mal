@@ -34,6 +34,7 @@ pub const MalType = union(enum) {
     pub const Number = i32;
 
     const Str = []const u8;
+    pub const Keyword = Str;
     pub const String = Str;
     pub const Symbol = Str;
 
@@ -182,6 +183,7 @@ pub const MalType = union(enum) {
     f,
     nil,
     number: Number,
+    keyword: String,
     string: String,
     symbol: Symbol,
 
@@ -209,6 +211,10 @@ pub const MalType = union(enum) {
 
     pub fn makeNumber(allocator: Allocator, num: Number) !*MalType {
         return make(allocator, .{ .number = num });
+    }
+
+    pub fn makeKeyword(allocator: Allocator, keyword: []const u8) !*MalType {
+        return make(allocator, .{ .keyword = keyword });
     }
 
     pub fn makeString(allocator: Allocator, string: []const u8) !*MalType {
@@ -310,6 +316,7 @@ pub const MalType = union(enum) {
         // check if values are of the same type
         return @enumToInt(self) == @enumToInt(other.*) and switch (self) {
             .number => |number| number == other.number,
+            .keyword => |keyword| std.mem.eql(u8, keyword, other.keyword),
             .string => |string| std.mem.eql(u8, string, other.string),
             .symbol => |symbol| std.mem.eql(u8, symbol, other.symbol),
             .t, .f, .nil => true,

@@ -251,6 +251,14 @@ pub fn symbol(allocator: Allocator, param: *MalType) !*MalType {
     return MalType.makeSymbol(allocator, try param.asString());
 }
 
+pub fn keyword(allocator: Allocator, param: *MalType) !*MalType {
+    return MalType.makeKeyword(allocator, try param.asString());
+}
+
+pub fn is_keyword(param: *MalType) bool {
+    return param.* == .keyword;
+}
+
 pub fn not_implemented(allocator: Allocator, params: MalType.List) !*MalType {
     _ = allocator;
     _ = params;
@@ -295,6 +303,8 @@ pub const ns = .{
     .@"false?" = is_false,
     .@"symbol?" = is_symbol,
     .@"symbol" = symbol,
+    .@"keyword" = keyword,
+    .@"keyword?" = is_keyword,
     .@"time-ms" = not_implemented,
     .@"meta" = not_implemented,
     .@"with-meta" = not_implemented,
