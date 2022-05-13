@@ -20,8 +20,13 @@ pub const EvalError = error{
     EnvSymbolNotFound,
     EvalInvalidFnParamsList,
     EvalIndexOutOfRange,
+    EvalTryInvalidOperands,
+    EvalCatchInvalidOperands,
+    EvalTryNoCatch,
     MalException,
 } || Allocator.Error || MalType.Primitive.Error;
+
+pub var current_exception: ?*MalType = null;
 
 pub const MalType = union(enum) {
     pub const List = std.ArrayList(*MalType);
