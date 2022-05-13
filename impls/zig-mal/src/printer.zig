@@ -37,6 +37,7 @@ pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool)
         .t => "true",
         .f => "false",
         .number => |number| try std.fmt.allocPrint(allocator, "{d}", .{number}),
+        .keyword => |keyword| try std.fmt.allocPrint(allocator, ":{s}", .{keyword}),
         .string => |string| if (print_readably) try std.fmt.allocPrint(allocator, "\"{s}\"", .{replaceWithEscapeSequences(allocator, string)}) else string,
         .symbol => |symbol| symbol,
         .list => |list| {

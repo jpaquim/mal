@@ -140,7 +140,6 @@ fn read_list(allocator: Allocator, reader: *Reader) !*MalType {
 
 fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
     const result = if (reader.next()) |token|
-        // TODO: support keyword
         if (std.mem.eql(u8, token, "nil"))
             .nil
         else if (std.mem.eql(u8, token, "true"))
@@ -149,6 +148,8 @@ fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
             .f
         else if (token[0] == '"') MalType{
             .string = try replaceEscapeSequences(allocator, token[1 .. token.len - 1]),
+        } else if (token[0] == ':') MalType{
+            .keyword = try allocator.dupe(u8, token[1..]),
         } else if (std.fmt.parseInt(i32, token, 10)) |int| MalType{
             .number = int,
         } else |_| MalType{
