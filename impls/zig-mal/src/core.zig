@@ -203,8 +203,7 @@ pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
 }
 
 pub fn throw(param: *MalType) !*MalType {
-    // TODO: global_exception = param;
-    _ = param;
+    types.current_exception = param;
     return error.MalException;
 }
 

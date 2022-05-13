@@ -132,6 +132,27 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         if (rest.len != 1) return error.EvalMacroexpandInvalidOperands;
                         return macroexpand(allocator, list.items[1], env);
                     }
+
+                    if (first.isSymbol("try*")) {
+                        const rest = list.items[1..];
+                        if (rest.len != 2) return error.EvalTryInvalidOperands;
+                        return EVAL(allocator, rest[0], env) catch {
+                            const catch_list = try rest[1].asList();
+                            if (catch_list.items.len != 3) return error.EvalCatchInvalidOperands;
+                            if (!catch_list.items[0].isSymbol("catch*")) return error.EvalTryNoCatch;
+                            const catch_symbol = try catch_list.items[1].asSymbol();
+                            var catch_env = try current_env.initChild();
+                            try catch_env.set(catch_symbol, types.current_exception orelse try MalType.makeNil(allocator));
+                            const result = try EVAL(allocator, catch_list.items[2], catch_env);
+                            // reset global exception if it has been handled
+                            types.current_exception = null;
+                            return result;
+                        };
+                    }
+
+                    // if (first.isSymbol("catch*")) {
+                    //     TODO: do something here?
+                    // }
                 }
                 const evaled_ast = try eval_ast(allocator, current_ast, current_env);
                 const evaled_items = evaled_ast.list.items;
@@ -167,7 +188,8 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
 fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
     return switch (ast.*) {
         .symbol => |symbol| env.get(symbol) catch |err| {
-            std.debug.print("At: {s}\n", .{symbol});
+            const message = try std.fmt.allocPrint(allocator, "'{s}' not found", .{symbol});
+            types.current_exception = try MalType.makeString(allocator, message);
             return err;
         },
         .list => |list| blk: {
@@ -330,7 +352,10 @@ pub fn main() anyerror!void {
         if (rep(gaa, arena.allocator(), line, &repl_env)) |result|
             try stdout.print("{s}\n", .{result})
         else |err| {
-            const message = switch (err) {
+            const message = if (types.current_exception) |exception| blk: {
+                const exception_message = exception.asString() catch printer.pr_str(arena.allocator(), exception, true);
+                break :blk exception_message;
+            } else switch (err) {
                 error.EmptyInput => continue,
                 error.EndOfInput => "unexpected end of input",
                 error.ListNoClosingTag => "unbalanced list form, missing closing ')'",
@@ -350,6 +375,7 @@ pub fn main() anyerror!void {
                 error.EvalInvalidOperands => "Invalid operands, wrong function argument arity",
                 error.EvalNotSymbolOrFn => "tried to evaluate list where the first item is not a function or special form",
                 error.EvalIndexOutOfRange => "index out of range",
+                error.EvalTryNoCatch => "try* without associated catch*",
                 error.EnvSymbolNotFound => "symbol not found",
                 error.OutOfMemory => "out of memory",
                 else => @errorName(err),
@@ -359,6 +385,7 @@ pub fn main() anyerror!void {
             // if (@errorReturnTrace()) |trace| {
             //     std.debug.dumpStackTrace(trace.*);
             // }
+            types.current_exception = null;
         }
     }
 }
