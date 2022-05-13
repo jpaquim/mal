@@ -202,6 +202,40 @@ pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
     return MalType.makeList(allocator, result_list);
 }
 
+pub fn throw(param: *MalType) !*MalType {
+    // TODO: global_exception = param;
+    _ = param;
+    return error.MalException;
+}
+
+pub fn apply(allocator: Allocator, params: MalType.List) !*MalType {
+    const num_params = params.items.len;
+    const function = params.items[0];
+    const last_list = try params.items[num_params - 1].asList();
+    if (num_params == 2) {
+        return function.apply(allocator, last_list.items);
+    }
+    const num_args = num_params - 2 + last_list.items.len;
+    var args_list = try MalType.List.initCapacity(allocator, num_args);
+    for (params.items[1 .. num_params - 2]) |param| {
+        args_list.appendAssumeCapacity(param);
+    }
+    for (last_list.items) |param| {
+        args_list.appendAssumeCapacity(param);
+    }
+    return function.apply(allocator, args_list.items);
+}
+
+pub fn map(allocator: Allocator, params: MalType.List) !*MalType {
+    const function = params.items[0];
+    const param_list = try params.items[1].asList();
+    var result = try MalType.List.initCapacity(allocator, param_list.items.len);
+    for (param_list.items) |param| {
+        result.appendAssumeCapacity(try function.apply(allocator, &.{param}));
+    }
+    return MalType.makeList(allocator, result);
+}
+
 pub const ns = .{
     .@"+" = add,
     .@"-" = subtract,
@@ -233,4 +267,7 @@ pub const ns = .{
     .@"nth" = nth,
     .@"first" = first,
     .@"rest" = rest,
+    .@"throw" = throw,
+    .@"apply" = apply,
+    .@"map" = map,
 };

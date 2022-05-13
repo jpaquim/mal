@@ -22,6 +22,7 @@ pub fn build(b: *std.build.Builder) void {
         b.addExecutable("step6_file", "src/step6_file.zig"),
         b.addExecutable("step7_quote", "src/step7_quote.zig"),
         b.addExecutable("step8_macros", "src/step8_macros.zig"),
+        b.addExecutable("step9_try", "src/step9_try.zig"),
     }) |exe| {
         exe.setTarget(target);
         exe.setBuildMode(mode);
