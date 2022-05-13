@@ -24,6 +24,7 @@ pub const EvalError = error{
     EvalCatchInvalidOperands,
     EvalTryNoCatch,
     MalException,
+    NotImplemented,
 } || Allocator.Error || MalType.Primitive.Error;
 
 pub var current_exception: ?*MalType = null;
