@@ -40,22 +40,8 @@ pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool)
         .keyword => |keyword| try std.fmt.allocPrint(allocator, ":{s}", .{keyword}),
         .string => |string| if (print_readably) try std.fmt.allocPrint(allocator, "\"{s}\"", .{replaceWithEscapeSequences(allocator, string)}) else string,
         .symbol => |symbol| symbol,
-        .list => |list| {
-            var printed_forms = std.ArrayList(u8).init(allocator);
-            const writer = printed_forms.writer();
-
-            try writer.writeAll("(");
-            for (list.items) |list_form, index| {
-                const printed_form = try pr_str(allocator, list_form, print_readably);
-                try writer.writeAll(printed_form);
-                if (index < list.items.len - 1) {
-                    try writer.writeAll(" ");
-                }
-            }
-            try writer.writeAll(")");
-
-            return printed_forms.items;
-        },
+        .list => |list| try printJoinDelims(allocator, "(", ")", list, print_readably),
+        .vector => |vector| try printJoinDelims(allocator, "[", "]", vector, print_readably),
     };
 }
 
@@ -75,4 +61,21 @@ pub fn printJoin(allocator: Allocator, separator: []const u8, args: MalType.List
         printed_args.appendAssumeCapacity(try pr_str(allocator, arg, print_readably));
     }
     return std.mem.join(allocator, separator, printed_args.items);
+}
+
+pub fn printJoinDelims(allocator: Allocator, delimiter_start: []const u8, delimiter_end: []const u8, args: MalType.List, print_readably: bool) ![]const u8 {
+    var printed_forms = std.ArrayList(u8).init(allocator);
+    const writer = printed_forms.writer();
+
+    try writer.writeAll(delimiter_start);
+    for (args.items) |list_form, index| {
+        const printed_form = try pr_str(allocator, list_form, print_readably);
+        try writer.writeAll(printed_form);
+        if (index < args.items.len - 1) {
+            try writer.writeAll(" ");
+        }
+    }
+    try writer.writeAll(delimiter_end);
+
+    return printed_forms.items;
 }

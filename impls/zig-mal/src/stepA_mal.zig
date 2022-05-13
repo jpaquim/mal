@@ -200,6 +200,14 @@ fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
             }
             break :blk results;
         },
+        .vector => |vector| blk: {
+            var results = try MalType.makeVectorCapacity(allocator, vector.items.len);
+            for (vector.items) |item| {
+                const result = try EVAL(allocator, item, env);
+                results.vector.appendAssumeCapacity(result);
+            }
+            break :blk results;
+        },
         else => ast,
     };
 }
