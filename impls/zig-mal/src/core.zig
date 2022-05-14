@@ -156,9 +156,14 @@ pub fn swap(allocator: Allocator, params: MalType.List) !*MalType {
 pub fn cons(allocator: Allocator, params: MalType.List) !*MalType {
     const head = params.items[0];
     const tail = params.items[1];
-    var result = try MalType.List.initCapacity(allocator, 1 + tail.list.items.len);
+    const tail_items = switch (tail.*) {
+        .list => |list| list.items,
+        .vector => |vector| vector.items,
+        else => return error.EvalConsInvalidOperands,
+    };
+    var result = try MalType.List.initCapacity(allocator, 1 + tail_items.len);
     result.appendAssumeCapacity(head);
-    for (tail.list.items) |item| {
+    for (tail_items) |item| {
         result.appendAssumeCapacity(item);
     }
     return MalType.makeList(allocator, result);
@@ -168,7 +173,12 @@ pub fn cons(allocator: Allocator, params: MalType.List) !*MalType {
 pub fn concat(allocator: Allocator, params: MalType.List) !*MalType {
     var result = MalType.List.init(allocator);
     for (params.items) |param| {
-        for ((try param.asList()).items) |nested| {
+        const items = switch (param.*) {
+            .list => |list| list.items,
+            .vector => |vector| vector.items,
+            else => return error.EvalConcatInvalidOperands,
+        };
+        for (items) |nested| {
             try result.append(nested);
         }
     }
@@ -177,26 +187,38 @@ pub fn concat(allocator: Allocator, params: MalType.List) !*MalType {
 
 pub fn nth(param: *MalType, n: *MalType) !*MalType {
     const index = @intCast(usize, try n.asNumber());
-    const param_list = try param.asList();
-    if (index >= param_list.items.len) return error.EvalIndexOutOfRange;
-    return param_list.items[index];
+    const items = switch (param.*) {
+        .list => |list| list.items,
+        .vector => |vector| vector.items,
+        else => return error.EvalNthInvalidOperands,
+    };
+    if (index >= items.len) return error.EvalIndexOutOfRange;
+    return items[index];
 }
 
 // TODO: move to linked lists to make this allocate less
 pub fn first(allocator: Allocator, param: *MalType) !*MalType {
     if (param.* == .nil) return MalType.makeNil(allocator);
-    const param_list = try param.asList();
-    if (param_list.items.len == 0) return MalType.makeNil(allocator);
-    return param_list.items[0];
+    const items = switch (param.*) {
+        .list => |list| list.items,
+        .vector => |vector| vector.items,
+        else => return error.EvalFirstInvalidOperands,
+    };
+    if (items.len == 0) return MalType.makeNil(allocator);
+    return items[0];
 }
 
 // TODO: move to linked lists to make this allocate less
 pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
     if (param.* == .nil) return MalType.makeListEmpty(allocator);
-    const param_list = try param.asList();
-    if (param_list.items.len == 0) return MalType.makeListEmpty(allocator);
-    var result_list = try MalType.List.initCapacity(allocator, param_list.items.len - 1);
-    for (param_list.items[1..]) |item| {
+    const items = switch (param.*) {
+        .list => |list| list.items,
+        .vector => |vector| vector.items,
+        else => return error.EvalRestInvalidOperands,
+    };
+    if (items.len == 0) return MalType.makeListEmpty(allocator);
+    var result_list = try MalType.List.initCapacity(allocator, items.len - 1);
+    for (items[1..]) |item| {
         result_list.appendAssumeCapacity(item);
     }
     return MalType.makeList(allocator, result_list);
@@ -210,16 +232,20 @@ pub fn throw(param: *MalType) !*MalType {
 pub fn apply(allocator: Allocator, params: MalType.List) !*MalType {
     const num_params = params.items.len;
     const function = params.items[0];
-    const last_list = try params.items[num_params - 1].asList();
+    const items = switch (params.items[num_params - 1].*) {
+        .list => |list| list.items,
+        .vector => |vector| vector.items,
+        else => return error.EvalApplyInvalidOperands,
+    };
     if (num_params == 2) {
-        return function.apply(allocator, last_list.items);
+        return function.apply(allocator, items);
     }
-    const num_args = num_params - 2 + last_list.items.len;
+    const num_args = num_params - 2 + items.len;
     var args_list = try MalType.List.initCapacity(allocator, num_args);
     for (params.items[1 .. num_params - 2]) |param| {
         args_list.appendAssumeCapacity(param);
     }
-    for (last_list.items) |param| {
+    for (items) |param| {
         args_list.appendAssumeCapacity(param);
     }
     return function.apply(allocator, args_list.items);
@@ -227,9 +253,13 @@ pub fn apply(allocator: Allocator, params: MalType.List) !*MalType {
 
 pub fn map(allocator: Allocator, params: MalType.List) !*MalType {
     const function = params.items[0];
-    const param_list = try params.items[1].asList();
-    var result = try MalType.List.initCapacity(allocator, param_list.items.len);
-    for (param_list.items) |param| {
+    const items = switch (params.items[1].*) {
+        .list => |list| list.items,
+        .vector => |vector| vector.items,
+        else => return error.EvalApplyInvalidOperands,
+    };
+    var result = try MalType.List.initCapacity(allocator, items.len);
+    for (items) |param| {
         result.appendAssumeCapacity(try function.apply(allocator, &.{param}));
     }
     return MalType.makeList(allocator, result);
@@ -257,6 +287,27 @@ pub fn keyword(allocator: Allocator, param: *MalType) !*MalType {
 
 pub fn is_keyword(param: *MalType) bool {
     return param.* == .keyword;
+}
+
+pub fn vec(allocator: Allocator, param: *MalType) !*MalType {
+    if (param.* == .vector) return param;
+    return MalType.makeVector(allocator, try param.asList());
+}
+
+pub fn vector(allocator: Allocator, params: MalType.List) !*MalType {
+    var result = try MalType.List.initCapacity(allocator, params.items.len);
+    for (params.items) |item| {
+        result.appendAssumeCapacity(item);
+    }
+    return MalType.makeVector(allocator, result);
+}
+
+pub fn is_vector(param: *MalType) bool {
+    return param.* == .vector;
+}
+
+pub fn is_sequential(param: *MalType) bool {
+    return param.* == .list or param.* == .vector;
 }
 
 pub fn not_implemented(allocator: Allocator, params: MalType.List) !*MalType {
@@ -305,6 +356,10 @@ pub const ns = .{
     .@"symbol" = symbol,
     .@"keyword" = keyword,
     .@"keyword?" = is_keyword,
+    .@"vec" = vec,
+    .@"vector" = vector,
+    .@"vector?" = is_vector,
+    .@"sequential?" = is_sequential,
     .@"time-ms" = not_implemented,
     .@"meta" = not_implemented,
     .@"with-meta" = not_implemented,

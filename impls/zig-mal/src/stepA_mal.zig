@@ -259,6 +259,30 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
             }
             return result;
         },
+        .vector => |vector| {
+            var result = try MalType.makeListEmpty(allocator);
+            var i = vector.items.len;
+            while (i > 0) {
+                i -= 1;
+                const element = vector.items[i];
+                if (element.* == .list and element.list.items[0].isSymbol("splice-unquote")) {
+                    var result_list = try MalType.List.initCapacity(allocator, 3);
+                    const concat = try MalType.makeSymbol(allocator, "concat");
+                    result_list.appendAssumeCapacity(concat);
+                    result_list.appendAssumeCapacity(element.list.items[1]);
+                    result_list.appendAssumeCapacity(result);
+                    result = try MalType.makeList(allocator, result_list);
+                } else {
+                    var result_list = try MalType.List.initCapacity(allocator, 3);
+                    const cons = try MalType.makeSymbol(allocator, "cons");
+                    result_list.appendAssumeCapacity(cons);
+                    result_list.appendAssumeCapacity(try quasiquote(allocator, element));
+                    result_list.appendAssumeCapacity(result);
+                    result = try MalType.makeList(allocator, result_list);
+                }
+            }
+            return result;
+        },
         .symbol => {
             var result_list = try MalType.List.initCapacity(allocator, 2);
             const quote = try MalType.makeSymbol(allocator, "quote");
@@ -383,6 +407,13 @@ pub fn main() anyerror!void {
                 error.EvalQuasiquoteexpandInvalidOperands => "Invalid quasiquoteexpand operands",
                 error.EvalDefmacroInvalidOperands => "Invalid defmacro! operands",
                 error.EvalMacroexpandInvalidOperands => "Invalid expandmacro operands",
+                error.EvalConsInvalidOperands => "Invalid cons operands",
+                error.EvalConcatInvalidOperands => "Invalid concat operands",
+                error.EvalVecInvalidOperands => "Invalid vec operands",
+                error.EvalNthInvalidOperands => "Invalid nth operands",
+                error.EvalFirstInvalidOperands => "Invalid first operands",
+                error.EvalRestInvalidOperands => "Invalid rest operands",
+                error.EvalApplyInvalidOperands => "Invalid apply operands",
                 error.EvalInvalidFnParamsList => "Invalid parameter list to fn* expression",
                 error.EvalInvalidOperand => "Invalid operand",
                 error.EvalInvalidOperands => "Invalid operands, wrong function argument arity",
