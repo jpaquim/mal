@@ -310,6 +310,76 @@ pub fn is_sequential(param: *MalType) bool {
     return param.* == .list or param.* == .vector;
 }
 
+pub fn hash_map(allocator: Allocator, params: MalType.List) !*MalType {
+    return MalType.makeHashMap(allocator, params);
+}
+
+pub fn is_hash_map(param: *MalType) bool {
+    return param.* == .hash_map;
+}
+
+pub fn assoc(allocator: Allocator, params: MalType.List) !*MalType {
+    const hash = try params.items[0].asHashMap();
+    const items = params.items[1..];
+    var hash_list = try MalType.List.initCapacity(allocator, 2 * hash.count() + items.len);
+    var it = hash.iterator();
+    while (it.next()) |entry| {
+        hash_list.appendAssumeCapacity(entry.key_ptr.*);
+        hash_list.appendAssumeCapacity(entry.value_ptr.*);
+    }
+    for (items) |item| {
+        hash_list.appendAssumeCapacity(item);
+    }
+    return MalType.makeHashMap(allocator, hash_list);
+}
+
+pub fn dissoc(allocator: Allocator, params: MalType.List) !*MalType {
+    const hash = try params.items[0].asHashMap();
+    const keys_to_remove = params.items[1..];
+    var hash_list = try MalType.List.initCapacity(allocator, 2 * hash.count());
+    var it = hash.iterator();
+    while (it.next()) |entry| {
+        for (keys_to_remove) |key| {
+            if (hash.contains(key)) break;
+        } else {
+            hash_list.appendAssumeCapacity(entry.key_ptr.*);
+            hash_list.appendAssumeCapacity(entry.value_ptr.*);
+        }
+    }
+    return MalType.makeHashMap(allocator, hash_list);
+}
+
+pub fn get(allocator: Allocator, param: *MalType, key: *MalType) !*MalType {
+    const hash = try param.asHashMap();
+    // TODO: check this
+    return hash.get(key) orelse MalType.makeNil(allocator);
+}
+
+pub fn contains(param: *MalType, key: *MalType) types.EvalError!bool {
+    const hash = try param.asHashMap();
+    return hash.contains(key);
+}
+
+pub fn keys(allocator: Allocator, param: *MalType) !*MalType {
+    const hash = try param.asHashMap();
+    var result_list = try MalType.List.initCapacity(allocator, hash.count());
+    var it = hash.iterator();
+    while (it.next()) |entry| {
+        result_list.appendAssumeCapacity(entry.key_ptr.*);
+    }
+    return MalType.makeList(allocator, result_list);
+}
+
+pub fn vals(allocator: Allocator, param: *MalType) !*MalType {
+    const hash = try param.asHashMap();
+    var result_list = try MalType.List.initCapacity(allocator, hash.count());
+    var it = hash.iterator();
+    while (it.next()) |entry| {
+        result_list.appendAssumeCapacity(entry.value_ptr.*);
+    }
+    return MalType.makeList(allocator, result_list);
+}
+
 pub fn not_implemented(allocator: Allocator, params: MalType.List) !*MalType {
     _ = allocator;
     _ = params;
@@ -360,6 +430,14 @@ pub const ns = .{
     .@"vector" = vector,
     .@"vector?" = is_vector,
     .@"sequential?" = is_sequential,
+    .@"hash-map" = hash_map,
+    .@"map?" = is_hash_map,
+    .@"assoc" = assoc,
+    .@"dissoc" = dissoc,
+    .@"get" = get,
+    .@"contains?" = contains,
+    .@"keys" = keys,
+    .@"vals" = vals,
     .@"time-ms" = not_implemented,
     .@"meta" = not_implemented,
     .@"with-meta" = not_implemented,
