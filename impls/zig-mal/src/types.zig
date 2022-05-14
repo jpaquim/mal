@@ -61,7 +61,9 @@ pub const MalType = union(enum) {
         op_num_num_out_bool: fn (a: Number, b: Number) bool,
         op_num_num_out_num: fn (a: Number, b: Number) Number,
         op_val_val_out_bool: fn (a: *MalType, b: *MalType) bool,
+        op_val_val_out_bool_err: fn (a: *MalType, b: *MalType) EvalError!bool,
         op_val_val_out_val: fn (a: *MalType, b: *MalType) EvalError!*MalType,
+        op_alloc_val_val_out_val: fn (allocator: Allocator, a: *MalType, b: *MalType) EvalError!*MalType,
         // varargs primitives
         op_alloc_varargs_out_val: fn (allocator: Allocator, args: List) EvalError!*MalType,
 
@@ -70,43 +72,54 @@ pub const MalType = union(enum) {
             std.debug.assert(type_info == .Fn);
             const args = type_info.Fn.args;
             const return_type = type_info.Fn.return_type.?;
-            return switch (args.len) {
-                1 => blk: {
+            switch (args.len) {
+                1 => {
                     const a_type = args[0].arg_type.?;
                     if (a_type == *MalType) {
                         if (return_type == bool)
-                            break :blk .{ .op_val_out_bool = fn_ptr };
+                            return .{ .op_val_out_bool = fn_ptr };
                         if (return_type == Number)
-                            break :blk .{ .op_val_out_num = fn_ptr };
-                        break :blk .{ .op_val_out_val = fn_ptr };
+                            return .{ .op_val_out_num = fn_ptr };
+                        return .{ .op_val_out_val = fn_ptr };
                     }
                 },
-                2 => blk: {
+                2 => {
                     const a_type = args[0].arg_type.?;
                     const b_type = args[1].arg_type.?;
                     if (a_type == Number and b_type == Number) {
                         if (return_type == bool)
-                            break :blk .{ .op_num_num_out_bool = fn_ptr };
+                            return .{ .op_num_num_out_bool = fn_ptr };
                         if (return_type == Number)
-                            break :blk .{ .op_num_num_out_num = fn_ptr };
+                            return .{ .op_num_num_out_num = fn_ptr };
                     }
                     if (a_type == *MalType and b_type == *MalType) {
                         if (return_type == bool)
-                            break :blk .{ .op_val_val_out_bool = fn_ptr };
+                            return .{ .op_val_val_out_bool = fn_ptr };
+                        if (return_type == EvalError!bool)
+                            return .{ .op_val_val_out_bool_err = fn_ptr };
 
-                        break :blk .{ .op_val_val_out_val = fn_ptr };
+                        return .{ .op_val_val_out_val = fn_ptr };
                     }
                     if (a_type == Allocator and b_type == *MalType) {
                         // TODO: and return_type == Error!*MalType
-                        break :blk .{ .op_alloc_val_out_val = fn_ptr };
+                        return .{ .op_alloc_val_out_val = fn_ptr };
                     }
                     if (a_type == Allocator and b_type == List) {
                         // TODO: and return_type == Error!*MalType
-                        break :blk .{ .op_alloc_varargs_out_val = fn_ptr };
+                        return .{ .op_alloc_varargs_out_val = fn_ptr };
+                    }
+                },
+                3 => {
+                    const a_type = args[0].arg_type.?;
+                    const b_type = args[1].arg_type.?;
+                    const c_type = args[2].arg_type.?;
+                    if (a_type == Allocator and b_type == *MalType and c_type == *MalType) {
+                        // TODO: and return_type == Error!*MalType
+                        return .{ .op_alloc_val_val_out_val = fn_ptr };
                     }
                 },
                 else => unreachable,
-            };
+            }
         }
         pub fn apply(primitive: Primitive, allocator: Allocator, args: []*MalType) !*MalType {
             // TODO: can probably be compile-time generated from function type info
@@ -135,6 +148,10 @@ pub const MalType = union(enum) {
                     if (args.len != 2) return error.EvalInvalidOperands;
                     return makeBool(allocator, op(args[0], args[1]));
                 },
+                .op_val_val_out_bool_err => |op| {
+                    if (args.len != 2) return error.EvalInvalidOperands;
+                    return makeBool(allocator, try op(args[0], args[1]));
+                },
                 .op_val_out_val => |op| {
                     if (args.len != 1) return error.EvalInvalidOperands;
                     return op(args[0]);
@@ -146,6 +163,10 @@ pub const MalType = union(enum) {
                 .op_alloc_val_out_val => |op| {
                     if (args.len != 1) return error.EvalInvalidOperands;
                     return op(allocator, args[0]);
+                },
+                .op_alloc_val_val_out_val => |op| {
+                    if (args.len != 2) return error.EvalInvalidOperands;
+                    return op(allocator, args[0], args[1]);
                 },
                 .op_alloc_varargs_out_val => |op| {
                     var args_list = try List.initCapacity(allocator, args.len);
@@ -183,6 +204,7 @@ pub const MalType = union(enum) {
     pub const TypeError = error{
         NotAtom,
         NotFunction,
+        NotHashMap,
         NotList,
         NotNumber,
         NotSymbol,
@@ -393,6 +415,13 @@ pub const MalType = union(enum) {
         return switch (self) {
             .list => |list| list,
             else => error.NotList,
+        };
+    }
+
+    pub fn asHashMap(self: Self) !HashMap {
+        return switch (self) {
+            .hash_map => |hash_map| hash_map,
+            else => error.NotHashMap,
         };
     }
 
