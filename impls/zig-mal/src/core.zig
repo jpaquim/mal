@@ -380,6 +380,22 @@ pub fn vals(allocator: Allocator, param: *MalType) !*MalType {
     return MalType.makeList(allocator, result_list);
 }
 
+pub fn is_string(param: *MalType) bool {
+    return param.* == .string;
+}
+
+pub fn is_number(param: *MalType) bool {
+    return param.* == .number;
+}
+
+pub fn is_fn(param: *MalType) bool {
+    return param.* == .primitive or (param.* == .closure and !param.closure.is_macro);
+}
+
+pub fn is_macro(param: *MalType) bool {
+    return param.* == .closure and param.closure.is_macro;
+}
+
 pub fn not_implemented(allocator: Allocator, params: MalType.List) !*MalType {
     _ = allocator;
     _ = params;
@@ -438,12 +454,13 @@ pub const ns = .{
     .@"contains?" = contains,
     .@"keys" = keys,
     .@"vals" = vals,
-    .@"time-ms" = not_implemented,
     .@"meta" = not_implemented,
     .@"with-meta" = not_implemented,
-    .@"fn?" = not_implemented,
-    .@"string?" = not_implemented,
-    .@"number?" = not_implemented,
-    .@"seq" = not_implemented,
+    .@"time-ms" = not_implemented,
     .@"conj" = not_implemented,
+    .@"string?" = is_string,
+    .@"number?" = is_number,
+    .@"fn?" = is_fn,
+    .@"macro?" = is_macro,
+    .@"seq" = not_implemented,
 };
