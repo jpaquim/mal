@@ -42,6 +42,7 @@ pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool)
         .symbol => |symbol| symbol,
         .list => |list| try printJoinDelims(allocator, "(", ")", list, print_readably),
         .vector => |vector| try printJoinDelims(allocator, "[", "]", vector, print_readably),
+        .hash_map => |hash_map| try printJoinDelims(allocator, "{", "}", try hashMapToList(allocator, hash_map), print_readably),
     };
 }
 
@@ -78,4 +79,14 @@ pub fn printJoinDelims(allocator: Allocator, delimiter_start: []const u8, delimi
     try writer.writeAll(delimiter_end);
 
     return printed_forms.items;
+}
+
+fn hashMapToList(allocator: Allocator, hash_map: MalType.HashMap) !MalType.List {
+    var list = try MalType.List.initCapacity(allocator, hash_map.count() * 2);
+    var it = hash_map.iterator();
+    while (it.next()) |entry| {
+        list.appendAssumeCapacity(entry.key_ptr.*);
+        list.appendAssumeCapacity(entry.value_ptr.*);
+    }
+    return list;
 }

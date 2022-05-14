@@ -186,30 +186,40 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
 }
 
 fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
-    return switch (ast.*) {
-        .symbol => |symbol| env.get(symbol) catch |err| {
+    switch (ast.*) {
+        .symbol => |symbol| return env.get(symbol) catch |err| {
             const message = try std.fmt.allocPrint(allocator, "'{s}' not found", .{symbol});
             types.current_exception = try MalType.makeString(allocator, message);
             return err;
         },
-        .list => |list| blk: {
+        .list => |list| {
             var results = try MalType.makeListCapacity(allocator, list.items.len);
             for (list.items) |item| {
                 const result = try EVAL(allocator, item, env);
                 results.list.appendAssumeCapacity(result);
             }
-            break :blk results;
+            return results;
         },
-        .vector => |vector| blk: {
+        .vector => |vector| {
             var results = try MalType.makeVectorCapacity(allocator, vector.items.len);
             for (vector.items) |item| {
                 const result = try EVAL(allocator, item, env);
                 results.vector.appendAssumeCapacity(result);
             }
-            break :blk results;
+            return results;
         },
-        else => ast,
-    };
+        .hash_map => |hash_map| {
+            var results_list = try MalType.List.initCapacity(allocator, 2 * hash_map.count());
+            var it = hash_map.iterator();
+            while (it.next()) |entry| {
+                results_list.appendAssumeCapacity(entry.key_ptr.*);
+                const result = try EVAL(allocator, entry.value_ptr.*, env);
+                results_list.appendAssumeCapacity(result);
+            }
+            return MalType.makeHashMap(allocator, results_list);
+        },
+        else => return ast,
+    }
 }
 
 fn PRINT(allocator: Allocator, ast: *const MalType) ![]const u8 {
