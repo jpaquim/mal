@@ -86,7 +86,8 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
         switch (token[0]) {
             '(' => return read_list(allocator, reader, .list),
             '[' => return read_list(allocator, reader, .vector),
-            ')', ']' => return null,
+            '{' => return read_list(allocator, reader, .hash_map),
+            ')', ']', '}' => return null,
             // reader macros:
             // @form => (deref form)
             '@' => {
@@ -121,6 +122,7 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
 const ListType = enum {
     list,
     vector,
+    hash_map,
 };
 
 fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalType {
@@ -144,6 +146,7 @@ fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalTy
     switch (list_type) {
         .list => return MalType.makeList(allocator, list),
         .vector => return MalType.makeVector(allocator, list),
+        .hash_map => return MalType.makeHashMap(allocator, list),
     }
 }
 

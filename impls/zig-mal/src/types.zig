@@ -46,6 +46,8 @@ pub const MalType = union(enum) {
 
     pub const List = std.ArrayList(*MalType);
     pub const Vector = std.ArrayList(*MalType);
+    // pub const HashMap = std.StringHashMap(*MalType);
+    pub const HashMap = std.AutoArrayHashMap(*MalType, *MalType);
 
     pub const Parameters = std.ArrayList(Symbol);
     pub const Primitive = union(enum) {
@@ -198,7 +200,7 @@ pub const MalType = union(enum) {
 
     list: List,
     vector: Vector,
-    // TODO: hash-maps
+    hash_map: HashMap,
 
     // functions
     primitive: Primitive,
@@ -274,6 +276,18 @@ pub const MalType = union(enum) {
             vector.appendAssumeCapacity(item);
         }
         return make(allocator, .{ .vector = vector });
+    }
+
+    pub fn makeHashMap(allocator: Allocator, list: List) !*MalType {
+        var hash_map = HashMap.init(allocator);
+        try hash_map.ensureTotalCapacity(@intCast(u32, list.items.len / 2));
+        var i: usize = 0;
+        while (i + 1 < list.items.len) : (i += 2) {
+            const key = list.items[i];
+            const value = list.items[i + 1];
+            hash_map.putAssumeCapacityNoClobber(key, value);
+        }
+        return make(allocator, .{ .hash_map = hash_map });
     }
 
     pub fn makeNil(allocator: Allocator) !*MalType {
@@ -363,7 +377,7 @@ pub const MalType = union(enum) {
             },
             .primitive => |primitive| @enumToInt(primitive) == @enumToInt(other.primitive) and
                 std.mem.eql(u8, std.mem.asBytes(&primitive), std.mem.asBytes(&other.primitive)),
-            .atom => &self == other,
+            else => &self == other,
         };
     }
 
