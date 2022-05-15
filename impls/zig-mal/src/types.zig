@@ -37,7 +37,7 @@ pub const EvalError = error{
 pub var current_exception: ?*MalType = null;
 
 pub const MalType = union(enum) {
-    pub const Number = i32;
+    pub const Number = i64;
 
     const Str = []const u8;
     pub const Keyword = Str;
@@ -52,6 +52,8 @@ pub const MalType = union(enum) {
     pub const Parameters = std.ArrayList(Symbol);
     pub const Primitive = union(enum) {
         pub const Error = error{StreamTooLong} || Allocator.Error || std.fs.File.OpenError || std.fs.File.WriteError || std.os.ReadError || TypeError || reader.ReadError;
+        // zero arity primitives
+        op_out_num: fn () Number,
         // unary primitives
         op_alloc_val_out_val: fn (allocator: Allocator, a: *MalType) EvalError!*MalType,
         op_val_out_val: fn (a: *MalType) EvalError!*MalType,
@@ -73,6 +75,10 @@ pub const MalType = union(enum) {
             const args = type_info.Fn.args;
             const return_type = type_info.Fn.return_type.?;
             switch (args.len) {
+                0 => {
+                    if (return_type == Number)
+                        return .{ .op_out_num = fn_ptr };
+                },
                 1 => {
                     const a_type = args[0].arg_type.?;
                     if (a_type == *MalType) {
@@ -139,6 +145,10 @@ pub const MalType = union(enum) {
                 .op_val_out_bool => |op| {
                     if (args.len != 1) return error.EvalInvalidOperands;
                     return makeBool(allocator, op(args[0]));
+                },
+                .op_out_num => |op| {
+                    if (args.len != 0) return error.EvalInvalidOperands;
+                    return makeNumber(allocator, op());
                 },
                 .op_val_out_num => |op| {
                     if (args.len != 1) return error.EvalInvalidOperands;

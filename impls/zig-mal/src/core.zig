@@ -380,6 +380,10 @@ pub fn vals(allocator: Allocator, param: *MalType) !*MalType {
     return MalType.makeList(allocator, result_list);
 }
 
+pub fn time_ms() Number {
+    return std.time.milliTimestamp();
+}
+
 pub fn is_string(param: *MalType) bool {
     return param.* == .string;
 }
@@ -456,7 +460,7 @@ pub const ns = .{
     .@"vals" = vals,
     .@"meta" = not_implemented,
     .@"with-meta" = not_implemented,
-    .@"time-ms" = not_implemented,
+    .@"time-ms" = time_ms,
     .@"conj" = not_implemented,
     .@"string?" = is_string,
     .@"number?" = is_number,
