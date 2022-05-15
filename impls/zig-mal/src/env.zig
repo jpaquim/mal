@@ -30,9 +30,14 @@ pub const Env = struct {
     }
 
     pub fn initBindExprs(allocator: Allocator, outer: ?*const Env, binds: []const Key, exprs: []*MalType) !Self {
-        std.debug.assert(binds.len == exprs.len);
+        // std.debug.assert(binds.len == exprs.len);
         var self = try Self.initCapacity(allocator, outer, @intCast(u32, binds.len));
         for (binds) |symbol, i| {
+            if (std.mem.eql(u8, symbol, "&")) {
+                const rest_symbol = binds[i + 1];
+                try self.set(rest_symbol, try MalType.makeListFromSlice(allocator, exprs[i..]));
+                break;
+            }
             try self.set(symbol, exprs[i]);
         }
         return self;

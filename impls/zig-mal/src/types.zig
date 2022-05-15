@@ -21,6 +21,7 @@ pub const EvalError = error{
     EvalFirstInvalidOperands,
     EvalRestInvalidOperands,
     EvalApplyInvalidOperands,
+    EvalMapInvalidOperands,
     EvalConjInvalidOperands,
     EvalSeqInvalidOperands,
     EvalInvalidOperand,
@@ -230,6 +231,7 @@ pub const MalType = union(enum) {
         NotHashMap,
         NotList,
         NotNumber,
+        NotSlice,
         NotSymbol,
         NotString,
     };
@@ -254,9 +256,9 @@ pub const MalType = union(enum) {
     atom: Atom,
 
     pub fn make(allocator: Allocator, value: MalType) !*MalType {
-        var result_ptr = try allocator.create(MalType);
-        result_ptr.* = value;
-        return result_ptr;
+        var ptr = try allocator.create(MalType);
+        ptr.* = value;
+        return ptr;
     }
 
     pub fn makeBool(allocator: Allocator, b: bool) !*MalType {
@@ -400,6 +402,7 @@ pub const MalType = union(enum) {
 
     pub fn equals(self: Self, other: *const Self) bool {
         // check if values are of the same type
+        // TODO: handle list == vector correctly
         return @enumToInt(self) == @enumToInt(other.*) and switch (self) {
             .number => |number| number == other.number,
             .keyword => |keyword| std.mem.eql(u8, keyword, other.keyword),
@@ -473,6 +476,14 @@ pub const MalType = union(enum) {
         return switch (self) {
             .atom => |atom| atom,
             else => error.NotAtom,
+        };
+    }
+
+    pub fn asSlice(self: Self) ![]*MalType {
+        return switch (self) {
+            .list => |list| list.items,
+            .vector => |vector| vector.items,
+            else => error.NotSlice,
         };
     }
 
