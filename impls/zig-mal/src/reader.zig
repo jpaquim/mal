@@ -49,9 +49,9 @@ pub const ReadError = error{
 pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     // tokenize input string into token list
     const tokens = try tokenize(allocator, input);
-    // check if there are no tokens or the token is a comment, in which case we
-    // throw a special error to continue the main REPL loop
-    if (tokens.items.len == 0 or tokens.items[0][0] == ';') {
+    // check if there are no tokens in which case we throw a special error to
+    // continue the main REPL loop
+    if (tokens.items.len == 0) {
         return error.EmptyInput;
     }
 
@@ -60,13 +60,9 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     // read a mal form
     const form = (try read_form(allocator, &reader)) orelse error.EndOfInput;
     // check if there are still remaining tokens after the form is read
-    if (reader.peek()) |token| blk: {
-        // check if the token is a comment, in which case there is no error
-        if (token[0] == ';') {
-            break :blk;
-        }
+    if (reader.peek()) |_| {
         // there should only be a single top-level form, so any remaining token
-        // (non-comment) indicates an error
+        // indicates an error
         return error.TokensPastFormEnd;
     }
     return form;
@@ -82,41 +78,48 @@ fn readerMacro(allocator: Allocator, reader: *Reader, symbol: []const u8) !*MalT
 }
 
 fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
-    if (reader.peek()) |token|
-        switch (token[0]) {
-            '(' => return read_list(allocator, reader, .list),
-            '[' => return read_list(allocator, reader, .vector),
-            '{' => return read_list(allocator, reader, .hash_map),
-            ')', ']', '}' => return null,
-            // reader macros:
-            // @form => (deref form)
-            '@' => {
-                _ = reader.next();
-                return readerMacro(allocator, reader, "deref");
-            },
-            // 'form => (quote form)
-            '\'' => {
-                _ = reader.next();
-                return readerMacro(allocator, reader, "quote");
-            },
-            // `form => (quasiquote form)
-            '`' => {
-                _ = reader.next();
-                return readerMacro(allocator, reader, "quasiquote");
-            },
-            // ~form => (unquote form)
-            // ~@form => (splice-unquote form)
-            '~' => {
-                _ = reader.next();
-                if (std.mem.eql(u8, token, "~@")) {
-                    return readerMacro(allocator, reader, "splice-unquote");
-                }
-                return readerMacro(allocator, reader, "unquote");
-            },
-            else => return read_atom(allocator, reader),
-        }
-    else
-        return error.EndOfInput;
+    while (true) {
+        if (reader.peek()) |token|
+            switch (token[0]) {
+                '(' => return read_list(allocator, reader, .list),
+                '[' => return read_list(allocator, reader, .vector),
+                '{' => return read_list(allocator, reader, .hash_map),
+                ')', ']', '}' => return null,
+                // skip over comment tokens
+                ';' => {
+                    _ = reader.next();
+                    continue;
+                },
+                // reader macros:
+                // @form => (deref form)
+                '@' => {
+                    _ = reader.next();
+                    return readerMacro(allocator, reader, "deref");
+                },
+                // 'form => (quote form)
+                '\'' => {
+                    _ = reader.next();
+                    return readerMacro(allocator, reader, "quote");
+                },
+                // `form => (quasiquote form)
+                '`' => {
+                    _ = reader.next();
+                    return readerMacro(allocator, reader, "quasiquote");
+                },
+                // ~form => (unquote form)
+                // ~@form => (splice-unquote form)
+                '~' => {
+                    _ = reader.next();
+                    if (std.mem.eql(u8, token, "~@")) {
+                        return readerMacro(allocator, reader, "splice-unquote");
+                    }
+                    return readerMacro(allocator, reader, "unquote");
+                },
+                else => return read_atom(allocator, reader),
+            }
+        else
+            return error.EndOfInput;
+    }
 }
 
 const ListType = enum {
@@ -126,22 +129,22 @@ const ListType = enum {
 };
 
 fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalType {
-    // skip over the first '(', '[' token in the list
+    // skip over the first '(', '[', '{' token in the list
     _ = reader.next();
     var list = std.ArrayList(*MalType).init(allocator);
-    // read the next forms until a matching ')' is found, or error otherwise
+    // read the next forms until a matching ')', ']', '}' is found, or error otherwise
     var err_form = read_form(allocator, reader);
     while (err_form) |opt_form| : (err_form = read_form(allocator, reader)) {
         if (opt_form) |form| {
             // push valid forms into array list
             try list.append(form);
         } else {
-            // found matching ')', break loop
+            // found matching ')', ']', '}' break loop
             break;
         }
-        // no matching closing ')' parenthes, return error
+        // no matching closing ')', ']', '}' parenthes, return error
     } else |_| return error.ListNoClosingTag;
-    // skip over the last ')', ']' token in the list
+    // skip over the last ')', ']', '}' token in the list
     _ = reader.next();
     switch (list_type) {
         .list => return MalType.makeList(allocator, list),
