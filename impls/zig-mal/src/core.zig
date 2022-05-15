@@ -352,6 +352,18 @@ pub fn vals(allocator: Allocator, param: *MalType) !*MalType {
     return MalType.makeList(allocator, result_list);
 }
 
+const input_buffer_length = 256;
+
+pub fn readline(allocator: Allocator, param: *MalType) !*MalType {
+    const stdin = std.io.getStdIn().reader();
+    const stdout = std.io.getStdOut().writer();
+    var input_buffer: [input_buffer_length]u8 = undefined;
+    const prompt = try param.asString();
+    try stdout.print("{s}", .{prompt});
+    const line = (try stdin.readUntilDelimiterOrEof(&input_buffer, '\n')) orelse return MalType.makeNil(allocator);
+    return MalType.makeString(allocator, try allocator.dupe(u8, line));
+}
+
 pub fn time_ms() Number {
     return std.time.milliTimestamp();
 }
@@ -475,6 +487,7 @@ pub const ns = .{
     .@"contains?" = contains,
     .@"keys" = keys,
     .@"vals" = vals,
+    .@"readline" = readline,
     .@"meta" = not_implemented,
     .@"with-meta" = not_implemented,
     .@"time-ms" = time_ms,
