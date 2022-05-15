@@ -21,6 +21,7 @@ pub const EvalError = error{
     EvalFirstInvalidOperands,
     EvalRestInvalidOperands,
     EvalApplyInvalidOperands,
+    EvalConjInvalidOperands,
     EvalInvalidOperand,
     EvalInvalidOperands,
     EvalNotSymbolOrFn,
@@ -68,6 +69,7 @@ pub const MalType = union(enum) {
         op_alloc_val_val_out_val: fn (allocator: Allocator, a: *MalType, b: *MalType) EvalError!*MalType,
         // varargs primitives
         op_alloc_varargs_out_val: fn (allocator: Allocator, args: List) EvalError!*MalType,
+        op_alloc_val_varargs_out_val: fn (allocator: Allocator, a: *MalType, args: List) EvalError!*MalType,
 
         pub fn make(fn_ptr: anytype) Primitive {
             const type_info = @typeInfo(@TypeOf(fn_ptr));
@@ -122,6 +124,10 @@ pub const MalType = union(enum) {
                     if (a_type == Allocator and b_type == *MalType and c_type == *MalType) {
                         // TODO: and return_type == Error!*MalType
                         return .{ .op_alloc_val_val_out_val = fn_ptr };
+                    }
+                    if (a_type == Allocator and b_type == *MalType and c_type == MalType.List) {
+                        // TODO: and return_type == Error!*MalType
+                        return .{ .op_alloc_val_varargs_out_val = fn_ptr };
                     }
                 },
                 else => unreachable,
@@ -182,6 +188,12 @@ pub const MalType = union(enum) {
                     var args_list = try List.initCapacity(allocator, args.len);
                     for (args) |arg| args_list.appendAssumeCapacity(arg);
                     return op(allocator, args_list);
+                },
+                .op_alloc_val_varargs_out_val => |op| {
+                    if (args.len < 2) return error.EvalInvalidOperands;
+                    var args_list = try List.initCapacity(allocator, args.len - 1);
+                    for (args[1..]) |arg| args_list.appendAssumeCapacity(arg);
+                    return op(allocator, args[0], args_list);
                 },
             }
         }
