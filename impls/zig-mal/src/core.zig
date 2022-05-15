@@ -384,6 +384,35 @@ pub fn time_ms() Number {
     return std.time.milliTimestamp();
 }
 
+pub fn conj(allocator: Allocator, param: *MalType, params: MalType.List) !*MalType {
+    switch (param.*) {
+        .list => |list| {
+            var result = try MalType.List.initCapacity(allocator, list.items.len + params.items.len);
+            var i = params.items.len;
+            while (i > 0) {
+                i -= 1;
+                const item = params.items[i];
+                result.appendAssumeCapacity(item);
+            }
+            for (list.items) |item| {
+                result.appendAssumeCapacity(item);
+            }
+            return MalType.makeList(allocator, result);
+        },
+        .vector => |vector| {
+            var result = try MalType.Vector.initCapacity(allocator, vector.items.len + params.items.len);
+            for (vector.items) |item| {
+                result.appendAssumeCapacity(item);
+            }
+            for (params.items) |item| {
+                result.appendAssumeCapacity(item);
+            }
+            return MalType.makeVector(allocator, result);
+        },
+        else => return error.EvalConjInvalidOperands,
+    }
+}
+
 pub fn is_string(param: *MalType) bool {
     return param.* == .string;
 }
@@ -461,7 +490,7 @@ pub const ns = .{
     .@"meta" = not_implemented,
     .@"with-meta" = not_implemented,
     .@"time-ms" = time_ms,
-    .@"conj" = not_implemented,
+    .@"conj" = conj,
     .@"string?" = is_string,
     .@"number?" = is_number,
     .@"fn?" = is_fn,

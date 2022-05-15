@@ -424,6 +424,7 @@ pub fn main() anyerror!void {
                 error.EvalFirstInvalidOperands => "Invalid first operands",
                 error.EvalRestInvalidOperands => "Invalid rest operands",
                 error.EvalApplyInvalidOperands => "Invalid apply operands",
+                error.EvalConjInvalidOperands => "Invalid conj operands",
                 error.EvalInvalidFnParamsList => "Invalid parameter list to fn* expression",
                 error.EvalInvalidOperand => "Invalid operand",
                 error.EvalInvalidOperands => "Invalid operands, wrong function argument arity",
