@@ -413,6 +413,22 @@ pub fn conj(allocator: Allocator, param: *MalType, params: MalType.List) !*MalTy
     }
 }
 
+pub fn seq(allocator: Allocator, param: *MalType) !*MalType {
+    switch (param.*) {
+        .list => |list| return if (list.items.len == 0) MalType.makeNil(allocator) else param,
+        .vector => |vector| return if (vector.items.len == 0) MalType.makeNil(allocator) else MalType.makeList(allocator, vector),
+        .string => |string| {
+            var result = try MalType.List.initCapacity(allocator, string.len);
+            for (string) |_, index| {
+                result.appendAssumeCapacity(try MalType.makeString(allocator, string[index .. index + 1]));
+            }
+            return MalType.makeList(allocator, result);
+        },
+        .nil => return param,
+        else => return error.EvalSeqInvalidOperands,
+    }
+}
+
 pub fn is_string(param: *MalType) bool {
     return param.* == .string;
 }
@@ -495,5 +511,5 @@ pub const ns = .{
     .@"number?" = is_number,
     .@"fn?" = is_fn,
     .@"macro?" = is_macro,
-    .@"seq" = not_implemented,
+    .@"seq" = seq,
 };

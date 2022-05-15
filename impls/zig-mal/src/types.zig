@@ -22,6 +22,7 @@ pub const EvalError = error{
     EvalRestInvalidOperands,
     EvalApplyInvalidOperands,
     EvalConjInvalidOperands,
+    EvalSeqInvalidOperands,
     EvalInvalidOperand,
     EvalInvalidOperands,
     EvalNotSymbolOrFn,
