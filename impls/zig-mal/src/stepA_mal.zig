@@ -82,10 +82,10 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                     }
 
                     if (first.isSymbol("fn*")) {
-                        const parameters = list.items[1].asList() catch return error.EvalInvalidFnParamsList;
+                        const parameters = list.items[1].asSlice() catch return error.EvalInvalidFnParamsList;
                         // convert from a list of MalType to a list of valid symbol keys to use in environment init
-                        var binds = try std.ArrayList(MalType.Symbol).initCapacity(allocator, parameters.items.len);
-                        for (parameters.items) |parameter| {
+                        var binds = try std.ArrayList(MalType.Symbol).initCapacity(allocator, parameters.len);
+                        for (parameters) |parameter| {
                             const parameter_symbol = parameter.asSymbol() catch return error.EvalInvalidFnParamsList;
                             binds.appendAssumeCapacity(parameter_symbol);
                         }
@@ -164,17 +164,12 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                     .primitive => |primitive| return primitive.apply(allocator, args),
                     .closure => |closure| {
                         const parameters = closure.parameters.items;
-                        if (parameters.len != args.len) {
-                            return error.EvalInvalidOperands;
-                        }
-                        // convert from a list of MalType.Symbol to a list of valid symbol keys to use in environment init
-                        var binds = try std.ArrayList([]const u8).initCapacity(allocator, parameters.len);
-                        for (parameters) |parameter| {
-                            binds.appendAssumeCapacity(parameter);
-                        }
-                        var fn_env_ptr = try closure.env.initChildBindExprs(binds.items, args);
+                        // if (parameters.len != args.len) {
+                        //     return error.EvalInvalidOperands;
+                        // }
+                        var fn_env = try closure.env.initChildBindExprs(parameters, args);
                         current_ast = closure.body;
-                        current_env = fn_env_ptr;
+                        current_env = fn_env;
                         continue;
                     },
                     else => return error.EvalNotSymbolOrFn,
@@ -424,6 +419,7 @@ pub fn main() anyerror!void {
                 error.EvalFirstInvalidOperands => "Invalid first operands",
                 error.EvalRestInvalidOperands => "Invalid rest operands",
                 error.EvalApplyInvalidOperands => "Invalid apply operands",
+                error.EvalMapInvalidOperands => "Invalid map operands",
                 error.EvalConjInvalidOperands => "Invalid conj operands",
                 error.EvalSeqInvalidOperands => "Invalid seq operands",
                 error.EvalInvalidFnParamsList => "Invalid parameter list to fn* expression",

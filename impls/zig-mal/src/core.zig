@@ -156,11 +156,7 @@ pub fn swap(allocator: Allocator, params: MalType.List) !*MalType {
 pub fn cons(allocator: Allocator, params: MalType.List) !*MalType {
     const head = params.items[0];
     const tail = params.items[1];
-    const tail_items = switch (tail.*) {
-        .list => |list| list.items,
-        .vector => |vector| vector.items,
-        else => return error.EvalConsInvalidOperands,
-    };
+    const tail_items = tail.asSlice() catch return error.EvalConsInvalidOperands;
     var result = try MalType.List.initCapacity(allocator, 1 + tail_items.len);
     result.appendAssumeCapacity(head);
     for (tail_items) |item| {
@@ -173,11 +169,7 @@ pub fn cons(allocator: Allocator, params: MalType.List) !*MalType {
 pub fn concat(allocator: Allocator, params: MalType.List) !*MalType {
     var result = MalType.List.init(allocator);
     for (params.items) |param| {
-        const items = switch (param.*) {
-            .list => |list| list.items,
-            .vector => |vector| vector.items,
-            else => return error.EvalConcatInvalidOperands,
-        };
+        const items = param.asSlice() catch return error.EvalConcatInvalidOperands;
         for (items) |nested| {
             try result.append(nested);
         }
@@ -187,11 +179,7 @@ pub fn concat(allocator: Allocator, params: MalType.List) !*MalType {
 
 pub fn nth(param: *MalType, n: *MalType) !*MalType {
     const index = @intCast(usize, try n.asNumber());
-    const items = switch (param.*) {
-        .list => |list| list.items,
-        .vector => |vector| vector.items,
-        else => return error.EvalNthInvalidOperands,
-    };
+    const items = param.asSlice() catch return error.EvalNthInvalidOperands;
     if (index >= items.len) return error.EvalIndexOutOfRange;
     return items[index];
 }
@@ -199,11 +187,7 @@ pub fn nth(param: *MalType, n: *MalType) !*MalType {
 // TODO: move to linked lists to make this allocate less
 pub fn first(allocator: Allocator, param: *MalType) !*MalType {
     if (param.* == .nil) return MalType.makeNil(allocator);
-    const items = switch (param.*) {
-        .list => |list| list.items,
-        .vector => |vector| vector.items,
-        else => return error.EvalFirstInvalidOperands,
-    };
+    const items = param.asSlice() catch return error.EvalFirstInvalidOperands;
     if (items.len == 0) return MalType.makeNil(allocator);
     return items[0];
 }
@@ -211,11 +195,7 @@ pub fn first(allocator: Allocator, param: *MalType) !*MalType {
 // TODO: move to linked lists to make this allocate less
 pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
     if (param.* == .nil) return MalType.makeListEmpty(allocator);
-    const items = switch (param.*) {
-        .list => |list| list.items,
-        .vector => |vector| vector.items,
-        else => return error.EvalRestInvalidOperands,
-    };
+    const items = param.asSlice() catch return error.EvalRestInvalidOperands;
     if (items.len == 0) return MalType.makeListEmpty(allocator);
     var result_list = try MalType.List.initCapacity(allocator, items.len - 1);
     for (items[1..]) |item| {
@@ -232,11 +212,7 @@ pub fn throw(param: *MalType) !*MalType {
 pub fn apply(allocator: Allocator, params: MalType.List) !*MalType {
     const num_params = params.items.len;
     const function = params.items[0];
-    const items = switch (params.items[num_params - 1].*) {
-        .list => |list| list.items,
-        .vector => |vector| vector.items,
-        else => return error.EvalApplyInvalidOperands,
-    };
+    const items = params.items[num_params - 1].asSlice() catch return error.EvalApplyInvalidOperands;
     if (num_params == 2) {
         return function.apply(allocator, items);
     }
@@ -253,11 +229,7 @@ pub fn apply(allocator: Allocator, params: MalType.List) !*MalType {
 
 pub fn map(allocator: Allocator, params: MalType.List) !*MalType {
     const function = params.items[0];
-    const items = switch (params.items[1].*) {
-        .list => |list| list.items,
-        .vector => |vector| vector.items,
-        else => return error.EvalApplyInvalidOperands,
-    };
+    const items = params.items[1].asSlice() catch return error.EvalMapInvalidOperands;
     var result = try MalType.List.initCapacity(allocator, items.len);
     for (items) |param| {
         result.appendAssumeCapacity(try function.apply(allocator, &.{param}));
@@ -295,7 +267,7 @@ pub fn vec(allocator: Allocator, param: *MalType) !*MalType {
 }
 
 pub fn vector(allocator: Allocator, params: MalType.List) !*MalType {
-    var result = try MalType.List.initCapacity(allocator, params.items.len);
+    var result = try MalType.Vector.initCapacity(allocator, params.items.len);
     for (params.items) |item| {
         result.appendAssumeCapacity(item);
     }
