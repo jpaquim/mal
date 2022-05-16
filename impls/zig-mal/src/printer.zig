@@ -37,7 +37,7 @@ pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool)
         .t => "true",
         .f => "false",
         .number => |number| try std.fmt.allocPrint(allocator, "{d}", .{number}),
-        .keyword => |keyword| try std.fmt.allocPrint(allocator, ":{s}", .{keyword}),
+        .keyword => |keyword| try std.fmt.allocPrint(allocator, ":{s}", .{keyword[2..]}),
         .string => |string| if (print_readably) try std.fmt.allocPrint(allocator, "\"{s}\"", .{replaceWithEscapeSequences(allocator, string)}) else string,
         .symbol => |symbol| symbol,
         .list => |list| try printJoinDelims(allocator, "(", ")", list, print_readably),
@@ -85,7 +85,7 @@ fn hashMapToList(allocator: Allocator, hash_map: MalType.HashMap) !MalType.List 
     var list = try MalType.List.initCapacity(allocator, hash_map.count() * 2);
     var it = hash_map.iterator();
     while (it.next()) |entry| {
-        list.appendAssumeCapacity(entry.key_ptr.*);
+        list.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
         list.appendAssumeCapacity(entry.value_ptr.*);
     }
     return list;

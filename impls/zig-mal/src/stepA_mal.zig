@@ -207,7 +207,7 @@ fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
             var results_list = try MalType.List.initCapacity(allocator, 2 * hash_map.count());
             var it = hash_map.iterator();
             while (it.next()) |entry| {
-                results_list.appendAssumeCapacity(entry.key_ptr.*);
+                results_list.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
                 const result = try EVAL(allocator, entry.value_ptr.*, env);
                 results_list.appendAssumeCapacity(result);
             }

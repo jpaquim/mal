@@ -50,7 +50,7 @@ pub const MalType = union(enum) {
     pub const List = std.ArrayList(*MalType);
     pub const Vector = std.ArrayList(*MalType);
     // pub const HashMap = std.StringHashMap(*MalType);
-    pub const HashMap = std.AutoArrayHashMap(*MalType, *MalType);
+    pub const HashMap = std.StringHashMap(*MalType);
 
     pub const Parameters = std.ArrayList(Symbol);
     pub const Primitive = union(enum) {
@@ -229,6 +229,7 @@ pub const MalType = union(enum) {
         NotAtom,
         NotFunction,
         NotHashMap,
+        NotKey,
         NotList,
         NotNumber,
         NotSlice,
@@ -330,7 +331,7 @@ pub const MalType = union(enum) {
         try hash_map.ensureTotalCapacity(@intCast(u32, list.items.len / 2));
         var i: usize = 0;
         while (i + 1 < list.items.len) : (i += 2) {
-            const key = list.items[i];
+            const key = try list.items[i].asKey();
             const value = list.items[i + 1];
             hash_map.putAssumeCapacityNoClobber(key, value);
         }
@@ -347,6 +348,10 @@ pub const MalType = union(enum) {
 
     pub fn makeClosure(allocator: Allocator, closure: Closure) !*MalType {
         return make(allocator, .{ .closure = closure });
+    }
+
+    pub fn makeKey(allocator: Allocator, string: Str) !*MalType {
+        if (string.len > 2 and std.mem.eql(u8, string[0..2], "ʞ")) return makeKeyword(allocator, string) else return makeString(allocator, string);
     }
 
     const Self = @This();
@@ -477,6 +482,15 @@ pub const MalType = union(enum) {
             .atom => |atom| atom,
             else => error.NotAtom,
         };
+    }
+
+    pub fn asKey(self: Self) ![]const u8 {
+        const result = switch (self) {
+            .keyword => |keyword| keyword,
+            .string => |string| string,
+            else => error.NotKey,
+        };
+        return result;
     }
 
     pub fn asSlice(self: Self) ![]*MalType {
