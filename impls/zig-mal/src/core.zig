@@ -296,7 +296,7 @@ pub fn assoc(allocator: Allocator, params: MalType.List) !*MalType {
     var hash_list = try MalType.List.initCapacity(allocator, 2 * hash.count() + items.len);
     var it = hash.iterator();
     while (it.next()) |entry| {
-        hash_list.appendAssumeCapacity(entry.key_ptr.*);
+        hash_list.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
         hash_list.appendAssumeCapacity(entry.value_ptr.*);
     }
     for (items) |item| {
@@ -312,9 +312,9 @@ pub fn dissoc(allocator: Allocator, params: MalType.List) !*MalType {
     var it = hash.iterator();
     while (it.next()) |entry| {
         for (keys_to_remove) |key| {
-            if (hash.contains(key)) break;
+            if (std.mem.eql(u8, try key.asKey(), entry.key_ptr.*)) break;
         } else {
-            hash_list.appendAssumeCapacity(entry.key_ptr.*);
+            hash_list.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
             hash_list.appendAssumeCapacity(entry.value_ptr.*);
         }
     }
@@ -324,20 +324,20 @@ pub fn dissoc(allocator: Allocator, params: MalType.List) !*MalType {
 pub fn get(allocator: Allocator, param: *MalType, key: *MalType) !*MalType {
     const hash = try param.asHashMap();
     // TODO: check this
-    return hash.get(key) orelse MalType.makeNil(allocator);
+    return hash.get(try key.asKey()) orelse MalType.makeNil(allocator);
 }
 
 pub fn contains(param: *MalType, key: *MalType) types.EvalError!bool {
     const hash = try param.asHashMap();
-    return hash.contains(key);
+    return hash.contains(try key.asKey());
 }
 
 pub fn keys(allocator: Allocator, param: *MalType) !*MalType {
     const hash = try param.asHashMap();
     var result_list = try MalType.List.initCapacity(allocator, hash.count());
-    var it = hash.iterator();
-    while (it.next()) |entry| {
-        result_list.appendAssumeCapacity(entry.key_ptr.*);
+    var it = hash.keyIterator();
+    while (it.next()) |key_ptr| {
+        result_list.appendAssumeCapacity(try MalType.makeKey(allocator, key_ptr.*));
     }
     return MalType.makeList(allocator, result_list);
 }
@@ -345,9 +345,9 @@ pub fn keys(allocator: Allocator, param: *MalType) !*MalType {
 pub fn vals(allocator: Allocator, param: *MalType) !*MalType {
     const hash = try param.asHashMap();
     var result_list = try MalType.List.initCapacity(allocator, hash.count());
-    var it = hash.iterator();
-    while (it.next()) |entry| {
-        result_list.appendAssumeCapacity(entry.value_ptr.*);
+    var it = hash.valueIterator();
+    while (it.next()) |value_ptr| {
+        result_list.appendAssumeCapacity(value_ptr.*);
     }
     return MalType.makeList(allocator, result_list);
 }
