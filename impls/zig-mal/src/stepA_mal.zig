@@ -123,9 +123,11 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                             const key_symbol = rest[0].asSymbol() catch return error.EvalDefmacroInvalidOperands;
 
                             const evaled_value = try EVAL(allocator, rest[1], current_env);
-                            evaled_value.closure.is_macro = true;
-                            try current_env.set(key_symbol, evaled_value);
-                            return evaled_value;
+                            // make a copy to avoid mutating existing functions
+                            var macro = try MalType.make(allocator, evaled_value.*);
+                            macro.closure.is_macro = true;
+                            try current_env.set(key_symbol, macro);
+                            return macro;
                         }
 
                         if (first.isSymbol("macroexpand")) {
@@ -299,7 +301,7 @@ fn macroexpand(allocator: Allocator, ast: *MalType, env: *Env) !*MalType {
     var current_ast = ast;
     while (is_macro_call(current_ast, env)) {
         const macro = try env.get(current_ast.list.first.?.data.symbol);
-        current_ast = try macro.apply(allocator, try current_ast.list.first.?.next.?.data.toSlice(allocator));
+        current_ast = try macro.apply(allocator, (try current_ast.toSlice(allocator))[1..]);
     }
     return current_ast;
 }
@@ -333,6 +335,7 @@ pub fn main() anyerror!void {
     // evaluate global prelude/preamble-type expressions
     _ = try rep(gaa, gaa, "(def! not (fn* (a) (if a false true)))", &repl_env);
     _ = try rep(gaa, gaa, "(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\nnil)\")))))", &repl_env);
+    _ = try rep(gaa, gaa, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))", &repl_env);
 
     // read command line arguments
     var iter = std.process.args();
