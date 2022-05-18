@@ -275,11 +275,14 @@ pub fn is_symbol(param: *MalType) bool {
 }
 
 pub fn symbol(allocator: Allocator, param: *MalType) !*MalType {
+    if (param.* == .symbol) return param;
     return MalType.makeSymbol(allocator, try param.asString());
 }
 
 pub fn keyword(allocator: Allocator, param: *MalType) !*MalType {
-    return MalType.makeKeyword(allocator, try param.asString());
+    if (param.* == .keyword) return param;
+    const string = try param.asString();
+    return MalType.makeKeyword(allocator, try MalType.addKeywordPrefix(allocator, string));
 }
 
 pub fn is_keyword(param: *MalType) bool {

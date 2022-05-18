@@ -379,7 +379,7 @@ pub const MalType = union(enum) {
         while (i + 1 < slice.len) : (i += 2) {
             const key = try slice[i].asKey();
             const value = slice[i + 1];
-            hash_map.putAssumeCapacityNoClobber(key, value);
+            hash_map.putAssumeCapacity(key, value);
         }
         return make(allocator, .{ .hash_map = hash_map });
     }
@@ -408,6 +408,10 @@ pub const MalType = union(enum) {
 
     pub fn makeKey(allocator: Allocator, string: Str) !*MalType {
         if (string.len > 2 and std.mem.eql(u8, string[0..2], "ʞ")) return makeKeyword(allocator, string) else return makeString(allocator, string);
+    }
+
+    pub fn addKeywordPrefix(allocator: Allocator, string: []const u8) !Keyword {
+        return std.mem.concat(allocator, u8, &.{ "ʞ", string });
     }
 
     pub fn equalsListVector(list: List, vector: Vector) bool {
