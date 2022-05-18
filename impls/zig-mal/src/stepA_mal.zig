@@ -227,9 +227,9 @@ fn PRINT(allocator: Allocator, ast: *const MalType) ![]const u8 {
     return output;
 }
 
-fn rep(global_allocator: Allocator, allocator: Allocator, input: []const u8, env: *Env) ![]const u8 {
-    const ast = try READ(global_allocator, input);
-    const result = try EVAL(global_allocator, ast, env);
+fn rep(allocator: Allocator, input: []const u8, env: *Env) ![]const u8 {
+    const ast = try READ(allocator, input);
+    const result = try EVAL(allocator, ast, env);
     const output = try PRINT(allocator, result);
     return output;
 }
@@ -317,17 +317,17 @@ pub fn main() anyerror!void {
     // global arena allocator
     var global_arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer global_arena.deinit();
-    const gaa = global_arena.allocator();
+    const allocator = global_arena.allocator();
 
     // REPL environment
-    repl_env = Env.init(gpa.allocator(), null);
+    repl_env = Env.init(allocator, null);
     defer repl_env.deinit();
 
     inline for (@typeInfo(@TypeOf(core.ns)).Struct.fields) |field| {
-        try repl_env.set(field.name, try MalType.makePrimitive(gaa, @field(core.ns, field.name)));
+        try repl_env.set(field.name, try MalType.makePrimitive(allocator, @field(core.ns, field.name)));
     }
 
-    try repl_env.set("eval", try MalType.makePrimitive(gaa, eval));
+    try repl_env.set("eval", try MalType.makePrimitive(allocator, eval));
 
     var input_buffer: [input_buffer_length]u8 = undefined;
     // initialize std io reader and writer
@@ -336,9 +336,9 @@ pub fn main() anyerror!void {
     const stderr = std.io.getStdErr().writer();
 
     // evaluate global prelude/preamble-type expressions
-    _ = try rep(gaa, gaa, "(def! not (fn* (a) (if a false true)))", &repl_env);
-    _ = try rep(gaa, gaa, "(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\nnil)\")))))", &repl_env);
-    _ = try rep(gaa, gaa, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))", &repl_env);
+    _ = try rep(allocator, "(def! not (fn* (a) (if a false true)))", &repl_env);
+    _ = try rep(allocator, "(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\nnil)\")))))", &repl_env);
+    _ = try rep(allocator, "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))", &repl_env);
 
     // read command line arguments
     var iter = std.process.args();
@@ -349,23 +349,23 @@ pub fn main() anyerror!void {
     const opt_filename = iter.next();
 
     // read rest of CLI arguments into the *ARGV* list
-    var argv = std.ArrayList(*MalType).init(gaa);
+    var argv = std.ArrayList(*MalType).init(allocator);
     while (iter.next()) |arg| {
-        try argv.append(try MalType.makeString(gaa, arg));
+        try argv.append(try MalType.makeString(allocator, arg));
     }
-    try repl_env.set("*ARGV*", try MalType.makeList(gaa, argv.items));
+    try repl_env.set("*ARGV*", try MalType.makeList(allocator, argv.items));
 
     const host_language = "mal-zig";
-    try repl_env.set("*host-language*", try MalType.makeString(gaa, host_language));
+    try repl_env.set("*host-language*", try MalType.makeString(allocator, host_language));
 
     // call (load-file filename) if given a filename argument
     if (opt_filename) |filename| {
-        const string = try std.mem.join(gaa, "\"", &.{ "(load-file ", filename, ")" });
-        _ = try rep(gaa, gaa, string, &repl_env);
+        const string = try std.mem.join(allocator, "\"", &.{ "(load-file ", filename, ")" });
+        _ = try rep(allocator, string, &repl_env);
         return;
     }
 
-    _ = try rep(gaa, gaa, "(println (str \"Mal [\" *host-language* \"]\"))", &repl_env);
+    _ = try rep(allocator, "(println (str \"Mal [\" *host-language* \"]\"))", &repl_env);
 
     // main repl loop
     while (true) {
@@ -382,7 +382,7 @@ pub fn main() anyerror!void {
         defer arena.deinit();
 
         // read-eval-print
-        if (rep(gaa, arena.allocator(), line, &repl_env)) |result|
+        if (rep(allocator, line, &repl_env)) |result|
             try stdout.print("{s}\n", .{result})
         else |err| {
             const message = if (Exception.get()) |exception| blk: {
