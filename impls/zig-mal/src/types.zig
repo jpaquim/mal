@@ -39,25 +39,27 @@ pub const EvalError = error{
     NotImplemented,
 } || Allocator.Error || MalType.Primitive.Error;
 
-pub var current_exception: ?*MalType = null;
+pub const Exception = struct {
+    var current_exception: ?*MalType = null;
 
-pub fn getException() ?*MalType {
-    return current_exception;
-}
+    pub fn get() ?*MalType {
+        return current_exception;
+    }
 
-pub fn clearException() void {
-    current_exception = null;
-}
+    pub fn clear() void {
+        current_exception = null;
+    }
 
-pub fn throwException(value: *MalType, err: EvalError) EvalError {
-    current_exception = value;
-    return err;
-}
+    pub fn throw(value: *MalType, err: EvalError) EvalError {
+        current_exception = value;
+        return err;
+    }
 
-pub fn throwExceptionMessage(allocator: Allocator, message: []const u8, err: EvalError) EvalError {
-    current_exception = try MalType.makeString(allocator, message);
-    return err;
-}
+    pub fn throwMessage(allocator: Allocator, message: []const u8, err: EvalError) EvalError {
+        current_exception = try MalType.makeString(allocator, message);
+        return err;
+    }
+};
 
 pub const MalType = union(enum) {
     pub const Number = i64;
