@@ -7,6 +7,7 @@ const reader = @import("./reader.zig");
 const types = @import("./types.zig");
 const MalType = types.MalType;
 const Number = MalType.Number;
+const throwException = types.throwException;
 
 pub fn add(a: Number, b: Number) Number {
     return a + b;
@@ -229,8 +230,7 @@ pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
 }
 
 pub fn throw(param: *MalType) !*MalType {
-    types.current_exception = param;
-    return error.MalException;
+    return throwException(param, error.MalException);
 }
 
 pub fn apply(allocator: Allocator, params: MalType.Slice) !*MalType {
