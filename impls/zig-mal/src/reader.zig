@@ -166,7 +166,7 @@ fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
         else if (token[0] == '"') MalType{
             .string = try replaceEscapeSequences(allocator, token[1 .. token.len - 1]),
         } else if (token[0] == ':') MalType{
-            .keyword = try std.mem.concat(allocator, u8, &.{ "ʞ", token[1..] }),
+            .keyword = try MalType.addKeywordPrefix(allocator, token[1..]),
         } else if (std.fmt.parseInt(i64, token, 10)) |int| MalType{
             .number = int,
         } else |_| MalType{
