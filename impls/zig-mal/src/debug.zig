@@ -17,18 +17,18 @@ pub fn print_ast(a: Allocator, ast: *const MalType) void {
     std.debug.print("ast: {s}\n", .{printer.pr_str(a, ast, true)});
 }
 
-pub fn print_env(a: Allocator, env: Env) void {
-    print_ptr("env: ", &env);
+pub fn print_env(a: Allocator, env: *Env) void {
+    print_ptr("env: ", env);
 
     var env_it = env.data.iterator();
     while (env_it.next()) |entry| {
-        std.debug.print("  '{s}: {s}\n", .{ entry.key_ptr.*, printer.pr_str(a, entry.value_ptr, true) });
+        std.debug.print("  '{s}: {s}\n", .{ entry.key_ptr.*, printer.pr_str(a, entry.value_ptr.*, true) });
     }
     if (env.outer) |outer| {
         print_ptr("outer: ", env.outer.?);
         var outer_env_it = outer.data.iterator();
         while (outer_env_it.next()) |entry| {
-            std.debug.print("  '{s}: {s}\n", .{ entry.key_ptr.*, printer.pr_str(a, entry.value_ptr, true) });
+            std.debug.print("  '{s}: {s}\n", .{ entry.key_ptr.*, printer.pr_str(a, entry.value_ptr.*, true) });
         }
     } else println("outer: null");
     println("");
