@@ -134,12 +134,12 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         if (first.isSymbol("macroexpand")) {
                             const rest = list_items[1..];
                             if (rest.len != 1) return error.EvalMacroexpandInvalidOperands;
-                            return macroexpand(allocator, list_items[1], env);
+                            return macroexpand(allocator, list_items[1], current_env);
                         }
 
                         if (first.isSymbol("try*")) {
                             const rest = list_items[1..];
-                            return EVAL(allocator, rest[0], env) catch {
+                            return EVAL(allocator, rest[0], current_env) catch {
                                 if (rest.len != 2) return error.EvalTryInvalidOperands;
                                 const catch_list = try rest[1].asList();
                                 const catch_list_items = try MalType.sliceFromList(allocator, catch_list);
