@@ -245,7 +245,8 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
     switch (ast.*) {
         .list => |list| {
             const list_items = try MalType.sliceFromList(allocator, list);
-            if (list_items[0].isSymbol("unquote")) {
+            if (list_items.len > 0 and list_items[0].isSymbol("unquote")) {
+                if (list_items.len < 2) return error.EvalUnquoteInvalidOperands;
                 return list_items[1];
             }
             var result = try MalType.makeListEmpty(allocator);
@@ -253,7 +254,8 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
             while (i > 0) {
                 i -= 1;
                 const element = list_items[i];
-                if (element.* == .list and element.list.first.?.data.isSymbol("splice-unquote")) {
+                if (element.isListWithFirstSymbol("splice-unquote")) {
+                    if (element.list.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
                     const concat = try MalType.makeSymbol(allocator, "concat");
                     result = try MalType.makeList(allocator, &.{ concat, element.list.first.?.next.?.data, result });
                 } else {
@@ -269,7 +271,8 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
             while (i > 0) {
                 i -= 1;
                 const element = vector.items[i];
-                if (element.* == .list and element.list.first.?.data.isSymbol("splice-unquote")) {
+                if (element.isListWithFirstSymbol("splice-unquote")) {
+                    if (element.list.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
                     const concat = try MalType.makeSymbol(allocator, "concat");
                     result = try MalType.makeList(allocator, &.{ concat, element.list.first.?.next.?.data, result });
                 } else {
@@ -399,6 +402,8 @@ pub fn main() anyerror!void {
                 error.EvalQuoteInvalidOperands => "Invalid quote operands",
                 error.EvalQuasiquoteInvalidOperands => "Invalid quasiquote operands",
                 error.EvalQuasiquoteexpandInvalidOperands => "Invalid quasiquoteexpand operands",
+                error.EvalUnquoteInvalidOperands => "Invalid unquote operands",
+                error.EvalSpliceunquoteInvalidOperands => "Invalid splice-unquote operands",
                 error.EvalDefmacroInvalidOperands => "Invalid defmacro! operands",
                 error.EvalMacroexpandInvalidOperands => "Invalid expandmacro operands",
                 error.EvalConsInvalidOperands => "Invalid cons operands",

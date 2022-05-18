@@ -12,6 +12,8 @@ pub const EvalError = error{
     EvalQuoteInvalidOperands,
     EvalQuasiquoteInvalidOperands,
     EvalQuasiquoteexpandInvalidOperands,
+    EvalUnquoteInvalidOperands,
+    EvalSpliceunquoteInvalidOperands,
     EvalDefmacroInvalidOperands,
     EvalMacroexpandInvalidOperands,
     EvalConsInvalidOperands,
@@ -388,6 +390,19 @@ pub const MalType = union(enum) {
         if (string.len > 2 and std.mem.eql(u8, string[0..2], "ʞ")) return makeKeyword(allocator, string) else return makeString(allocator, string);
     }
 
+    pub fn equalsListVector(list: List, vector: Vector) bool {
+        const items = vector.items;
+        var i: usize = 0;
+        var it = list.first;
+        return while (it) |node| : ({
+            it = node.next;
+            i += 1;
+        }) {
+            if (i >= items.len) break false;
+            if (!node.data.equals(items[i])) break false;
+        } else i == items.len;
+    }
+
     const Self = @This();
 
     // pub fn deinit(self: *Self) void {
@@ -441,8 +456,7 @@ pub const MalType = union(enum) {
 
     pub fn equals(self: Self, other: *const Self) bool {
         // check if values are of the same type
-        // TODO: handle list == vector correctly
-        return @enumToInt(self) == @enumToInt(other.*) and switch (self) {
+        if (@enumToInt(self) == @enumToInt(other.*)) return switch (self) {
             .number => |number| number == other.number,
             .keyword => |keyword| std.mem.eql(u8, keyword, other.keyword),
             .string => |string| std.mem.eql(u8, string, other.string),
@@ -473,10 +487,19 @@ pub const MalType = union(enum) {
                 std.mem.eql(u8, std.mem.asBytes(&primitive), std.mem.asBytes(&other.primitive)),
             else => &self == other,
         };
+        if (self == .list and other.* == .vector) {
+            return MalType.equalsListVector(self.list, other.vector);
+        } else if (self == .vector and other.* == .list) {
+            return MalType.equalsListVector(other.list, self.vector);
+        } else return false;
     }
 
     pub fn isSymbol(self: Self, symbol: []const u8) bool {
         return self == .symbol and std.mem.eql(u8, self.symbol, symbol);
+    }
+
+    pub fn isListWithFirstSymbol(self: Self, symbol: []const u8) bool {
+        return self == .list and self.list.first != null and self.list.first.?.data.isSymbol(symbol);
     }
 
     pub fn isTruthy(self: Self) bool {
