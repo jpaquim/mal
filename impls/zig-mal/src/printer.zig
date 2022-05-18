@@ -42,7 +42,7 @@ pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool)
         .symbol => |symbol| symbol,
         .list => |list| try printJoinDelims(allocator, "(", ")", try MalType.sliceFromList(allocator, list), print_readably),
         .vector => |vector| try printJoinDelims(allocator, "[", "]", vector.items, print_readably),
-        .hash_map => |hash_map| try printJoinDelims(allocator, "{", "}", try hashMapToSlice(allocator, hash_map), print_readably),
+        .hash_map => |hash_map| try printJoinDelims(allocator, "{", "}", try MalType.sliceFromHashMap(allocator, hash_map), print_readably),
     };
 }
 
@@ -79,14 +79,4 @@ pub fn printJoinDelims(allocator: Allocator, delimiter_start: []const u8, delimi
     try writer.writeAll(delimiter_end);
 
     return printed_forms.items;
-}
-
-fn hashMapToSlice(allocator: Allocator, hash_map: MalType.HashMap) !MalType.Slice {
-    var list = try std.ArrayList(*MalType).initCapacity(allocator, hash_map.count() * 2);
-    var it = hash_map.iterator();
-    while (it.next()) |entry| {
-        list.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
-        list.appendAssumeCapacity(entry.value_ptr.*);
-    }
-    return list.items;
 }

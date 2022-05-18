@@ -113,7 +113,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                         if (first.isSymbol("quasiquote")) {
                             const rest = list_items[1..];
                             if (rest.len != 1) return error.EvalQuasiquoteInvalidOperands;
-                            current_ast = try quasiquote(allocator, list_items[1]);
+                            current_ast = try quasiquote(allocator, rest[0]);
                             continue;
                         }
 
@@ -277,9 +277,10 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
                     result = try MalType.makeList(allocator, &.{ cons, try quasiquote(allocator, element), result });
                 }
             }
-            return result;
+            const vec = try MalType.makeSymbol(allocator, "vec");
+            return MalType.makeList(allocator, &.{ vec, result });
         },
-        .symbol => {
+        .symbol, .hash_map => {
             const quote = try MalType.makeSymbol(allocator, "quote");
             return MalType.makeList(allocator, &.{ quote, ast });
         },
