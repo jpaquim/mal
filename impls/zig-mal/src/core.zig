@@ -5,9 +5,9 @@ const printer = @import("./printer.zig");
 const printJoin = printer.printJoin;
 const reader = @import("./reader.zig");
 const types = @import("./types.zig");
+const Exception = types.Exception;
 const MalType = types.MalType;
 const Number = MalType.Number;
-const throwException = types.throwException;
 
 pub fn add(a: Number, b: Number) Number {
     return a + b;
@@ -188,7 +188,7 @@ pub fn concat(allocator: Allocator, params: MalType.Slice) !*MalType {
     return MalType.makeList(allocator, result.items);
 }
 
-pub fn nth(param: *MalType, index: *MalType) !*MalType {
+pub fn nth(allocator: Allocator, param: *MalType, index: *MalType) !*MalType {
     const n = try index.asNumber();
     return switch (param.*) {
         .list => |list| {
@@ -200,11 +200,12 @@ pub fn nth(param: *MalType, index: *MalType) !*MalType {
             }) {
                 if (i == n) return node.data;
             } else {
-                return error.EvalIndexOutOfRange;
+                return Exception.throwMessage(allocator, "index out of range", error.EvalIndexOutOfRange);
             }
         },
         .vector => |vector| {
-            if (n >= vector.items.len) return error.EvalIndexOutOfRange;
+            if (n >= vector.items.len)
+                return Exception.throwMessage(allocator, "index out of range", error.EvalIndexOutOfRange);
             return vector.items[@intCast(usize, n)];
         },
         else => error.EvalNthInvalidOperands,
@@ -230,7 +231,7 @@ pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
 }
 
 pub fn throw(param: *MalType) !*MalType {
-    return throwException(param, error.MalException);
+    return Exception.throw(param, error.MalException);
 }
 
 pub fn apply(allocator: Allocator, params: MalType.Slice) !*MalType {

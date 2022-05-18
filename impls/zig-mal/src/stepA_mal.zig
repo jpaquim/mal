@@ -7,10 +7,8 @@ const printer = @import("./printer.zig");
 const reader = @import("./reader.zig");
 const types = @import("./types.zig");
 const EvalError = types.EvalError;
+const Exception = types.Exception;
 const MalType = types.MalType;
-const clearException = types.clearException;
-const getException = types.getException;
-const throwExceptionMessage = types.throwExceptionMessage;
 
 const input_buffer_length = 256;
 const prompt = "user> ";
@@ -149,10 +147,10 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                                 if (!catch_list_items[0].isSymbol("catch*")) return error.EvalTryNoCatch;
                                 const catch_symbol = try catch_list_items[1].asSymbol();
                                 var catch_env = try current_env.initChild();
-                                try catch_env.set(catch_symbol, getException() orelse try MalType.makeNil(allocator));
+                                try catch_env.set(catch_symbol, Exception.get() orelse try MalType.makeNil(allocator));
                                 const result = try EVAL(allocator, catch_list_items[2], catch_env);
                                 // reset global exception if it has been handled
-                                clearException();
+                                Exception.clear();
                                 return result;
                             };
                         }
@@ -191,7 +189,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
 fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
     switch (ast.*) {
         .symbol => |symbol| return env.get(symbol) catch |err| {
-            return throwExceptionMessage(allocator, try std.fmt.allocPrint(allocator, "'{s}' not found", .{symbol}), err);
+            return Exception.throwMessage(allocator, try std.fmt.allocPrint(allocator, "'{s}' not found", .{symbol}), err);
         },
         .list => |list| {
             var results = try std.ArrayList(*MalType).initCapacity(allocator, list.len());
@@ -387,7 +385,7 @@ pub fn main() anyerror!void {
         if (rep(gaa, arena.allocator(), line, &repl_env)) |result|
             try stdout.print("{s}\n", .{result})
         else |err| {
-            const message = if (getException()) |exception| blk: {
+            const message = if (Exception.get()) |exception| blk: {
                 const exception_message = exception.asString() catch printer.pr_str(arena.allocator(), exception, true);
                 break :blk exception_message;
             } else switch (err) {
@@ -433,7 +431,7 @@ pub fn main() anyerror!void {
             // if (@errorReturnTrace()) |trace| {
             //     std.debug.dumpStackTrace(trace.*);
             // }
-            clearException();
+            Exception.clear();
         }
     }
 }
