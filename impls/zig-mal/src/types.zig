@@ -41,6 +41,24 @@ pub const EvalError = error{
 
 pub var current_exception: ?*MalType = null;
 
+pub fn getException() ?*MalType {
+    return current_exception;
+}
+
+pub fn clearException() void {
+    current_exception = null;
+}
+
+pub fn throwException(value: *MalType, err: EvalError) EvalError {
+    current_exception = value;
+    return err;
+}
+
+pub fn throwExceptionMessage(allocator: Allocator, message: []const u8, err: EvalError) EvalError {
+    current_exception = try MalType.makeString(allocator, message);
+    return err;
+}
+
 pub const MalType = union(enum) {
     pub const Number = i64;
 
@@ -207,9 +225,9 @@ pub const MalType = union(enum) {
 
         pub fn apply(closure: Closure, allocator: Allocator, args: []*MalType) !*MalType {
             const parameters = closure.parameters.items;
-            if (parameters.len != args.len) {
-                return error.EvalInvalidOperands;
-            }
+            // if (parameters.len != args.len) {
+            //     return error.EvalInvalidOperands;
+            // }
             // convert from a list of MalType.Symbol to a list of valid symbol keys to use in environment init
             var binds = try std.ArrayList([]const u8).initCapacity(allocator, parameters.len);
             for (parameters) |parameter| {
