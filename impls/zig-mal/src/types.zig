@@ -362,6 +362,16 @@ pub const MalType = union(enum) {
         return make(allocator, .{ .hash_map = hash_map });
     }
 
+    pub fn sliceFromHashMap(allocator: Allocator, hash_map: MalType.HashMap) !Slice {
+        var list = try std.ArrayList(*MalType).initCapacity(allocator, hash_map.count() * 2);
+        var it = hash_map.iterator();
+        while (it.next()) |entry| {
+            list.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
+            list.appendAssumeCapacity(entry.value_ptr.*);
+        }
+        return list.items;
+    }
+
     pub fn makeNil(allocator: Allocator) !*MalType {
         return make(allocator, .nil);
     }
