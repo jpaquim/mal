@@ -72,10 +72,7 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
 fn readerMacro(allocator: Allocator, reader: *Reader, symbol: []const u8) !*MalType {
     const prefix = try MalType.makeSymbol(allocator, symbol);
     const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-    var list = try MalType.List.initCapacity(allocator, 2);
-    list.appendAssumeCapacity(prefix);
-    list.appendAssumeCapacity(form);
-    return MalType.makeList(allocator, list);
+    return MalType.makeList(allocator, &.{ prefix, form });
 }
 
 fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
@@ -148,9 +145,9 @@ fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalTy
     // skip over the last ')', ']', '}' token in the list
     _ = reader.next();
     switch (list_type) {
-        .list => return MalType.makeList(allocator, list),
+        .list => return MalType.makeList(allocator, list.items),
         .vector => return MalType.makeVector(allocator, list),
-        .hash_map => return MalType.makeHashMap(allocator, list),
+        .hash_map => return MalType.makeHashMap(allocator, list.items),
     }
 }
 

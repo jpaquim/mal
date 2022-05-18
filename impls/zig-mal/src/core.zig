@@ -42,7 +42,7 @@ pub fn greaterOrEqual(a: Number, b: Number) bool {
     return a >= b;
 }
 
-pub fn list(allocator: Allocator, params: MalType.List) !*MalType {
+pub fn list(allocator: Allocator, params: MalType.Slice) !*MalType {
     return MalType.makeList(allocator, params);
 }
 
@@ -59,28 +59,28 @@ pub fn is_empty(param: *MalType) bool {
 }
 
 pub fn count(param: *MalType) Number {
-    if (is_list(param))
-        return @intCast(Number, param.list.items.len)
-    else if (is_nil(param))
-        return 0
-    else
+    return switch (param.*) {
+        .list => |list| @intCast(Number, list.len()),
+        .vector => |vector| @intCast(Number, vector.items.len),
+        .nil => 0,
         // TODO: error if not list?
-        return -1;
+        else => -1,
+    };
 }
 
 pub fn eql(a: *MalType, b: *MalType) bool {
     return a.equals(b);
 }
 
-pub fn pr_str(allocator: Allocator, args: MalType.List) !*MalType {
+pub fn pr_str(allocator: Allocator, args: MalType.Slice) !*MalType {
     return MalType.makeString(allocator, try printJoin(allocator, " ", args, true));
 }
 
-pub fn str(allocator: Allocator, args: MalType.List) !*MalType {
+pub fn str(allocator: Allocator, args: MalType.Slice) !*MalType {
     return MalType.makeString(allocator, try printJoin(allocator, "", args, false));
 }
 
-pub fn prn(allocator: Allocator, args: MalType.List) !*MalType {
+pub fn prn(allocator: Allocator, args: MalType.Slice) !*MalType {
     const string = try printJoin(allocator, " ", args, true);
     defer allocator.free(string);
 
@@ -90,7 +90,7 @@ pub fn prn(allocator: Allocator, args: MalType.List) !*MalType {
     return MalType.make(allocator, .nil);
 }
 
-pub fn println(allocator: Allocator, args: MalType.List) !*MalType {
+pub fn println(allocator: Allocator, args: MalType.Slice) !*MalType {
     const string = try printJoin(allocator, " ", args, false);
     defer allocator.free(string);
 
@@ -136,14 +136,14 @@ pub fn reset(param: *MalType, value: *MalType) !*MalType {
     return value;
 }
 
-pub fn swap(allocator: Allocator, params: MalType.List) !*MalType {
-    const a = params.items[0];
+pub fn swap(allocator: Allocator, params: MalType.Slice) !*MalType {
+    const a = params[0];
     const value = try a.asAtom();
-    const function = params.items[1];
+    const function = params[1];
 
-    var args = try std.ArrayList(*MalType).initCapacity(allocator, params.items.len - 1);
+    var args = try std.ArrayList(*MalType).initCapacity(allocator, params.len - 1);
     args.appendAssumeCapacity(value);
-    for (params.items[2..]) |param| {
+    for (params[2..]) |param| {
         args.appendAssumeCapacity(param);
     }
 
@@ -152,56 +152,80 @@ pub fn swap(allocator: Allocator, params: MalType.List) !*MalType {
     return result;
 }
 
-// TODO: move to linked lists to make this allocate less
-pub fn cons(allocator: Allocator, params: MalType.List) !*MalType {
-    const head = params.items[0];
-    const tail = params.items[1];
-    const tail_items = tail.asSlice() catch return error.EvalConsInvalidOperands;
-    var result = try MalType.List.initCapacity(allocator, 1 + tail_items.len);
-    result.appendAssumeCapacity(head);
-    for (tail_items) |item| {
-        result.appendAssumeCapacity(item);
+pub fn cons(allocator: Allocator, params: MalType.Slice) !*MalType {
+    const head = params[0];
+    const tail = params[1];
+    switch (tail.*) {
+        .list => |list| {
+            return MalType.makeListPrependSlice(allocator, list, &.{head});
+        },
+        .vector => |vector| {
+            return MalType.makeListPrependSlice(allocator, try MalType.listFromSlice(allocator, vector.items), &.{head});
+        },
+        else => return error.EvalConsInvalidOperands,
     }
-    return MalType.makeList(allocator, result);
 }
 
-// TODO: move to linked lists to make this allocate less
-pub fn concat(allocator: Allocator, params: MalType.List) !*MalType {
-    var result = MalType.List.init(allocator);
-    for (params.items) |param| {
-        const items = param.asSlice() catch return error.EvalConcatInvalidOperands;
-        for (items) |nested| {
-            try result.append(nested);
+pub fn concat(allocator: Allocator, params: MalType.Slice) !*MalType {
+    var result = std.ArrayList(*MalType).init(allocator);
+    for (params) |param| {
+        switch (param.*) {
+            .list => |list| {
+                var it = list.first;
+                while (it) |node| : (it = node.next) {
+                    try result.append(node.data);
+                }
+            },
+            .vector => |vector| {
+                for (vector.items) |nested| {
+                    try result.append(nested);
+                }
+            },
+            else => return error.EvalConcatInvalidOperands,
         }
     }
-    return MalType.makeList(allocator, result);
+    return MalType.makeList(allocator, result.items);
 }
 
-pub fn nth(param: *MalType, n: *MalType) !*MalType {
-    const index = @intCast(usize, try n.asNumber());
-    const items = param.asSlice() catch return error.EvalNthInvalidOperands;
-    if (index >= items.len) return error.EvalIndexOutOfRange;
-    return items[index];
+pub fn nth(param: *MalType, index: *MalType) !*MalType {
+    const n = try index.asNumber();
+    return switch (param.*) {
+        .list => |list| {
+            var i: Number = 0;
+            var it = list.first;
+            while (it) |node| : ({
+                it = node.next;
+                i += 1;
+            }) {
+                if (i == n) return node.data;
+            } else {
+                return error.EvalIndexOutOfRange;
+            }
+        },
+        .vector => |vector| {
+            if (n >= vector.items.len) return error.EvalIndexOutOfRange;
+            return vector.items[@intCast(usize, n)];
+        },
+        else => error.EvalNthInvalidOperands,
+    };
 }
 
-// TODO: move to linked lists to make this allocate less
 pub fn first(allocator: Allocator, param: *MalType) !*MalType {
-    if (param.* == .nil) return MalType.makeNil(allocator);
-    const items = param.asSlice() catch return error.EvalFirstInvalidOperands;
-    if (items.len == 0) return MalType.makeNil(allocator);
-    return items[0];
+    return switch (param.*) {
+        .nil => MalType.makeNil(allocator),
+        .list => |list| if (list.first) |node| node.data else MalType.makeNil(allocator),
+        .vector => |vector| if (vector.items.len > 0) vector.items[0] else MalType.makeNil(allocator),
+        else => error.EvalFirstInvalidOperands,
+    };
 }
 
-// TODO: move to linked lists to make this allocate less
 pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
-    if (param.* == .nil) return MalType.makeListEmpty(allocator);
-    const items = param.asSlice() catch return error.EvalRestInvalidOperands;
-    if (items.len == 0) return MalType.makeListEmpty(allocator);
-    var result_list = try MalType.List.initCapacity(allocator, items.len - 1);
-    for (items[1..]) |item| {
-        result_list.appendAssumeCapacity(item);
-    }
-    return MalType.makeList(allocator, result_list);
+    return switch (param.*) {
+        .nil => MalType.makeListEmpty(allocator),
+        .list => |list| if (list.first) |node| MalType.makeListFromNode(allocator, node.next) else MalType.makeListEmpty(allocator),
+        .vector => |vector| if (vector.items.len > 1) MalType.makeList(allocator, vector.items[1..]) else MalType.makeListEmpty(allocator),
+        else => error.EvalRestInvalidOperands,
+    };
 }
 
 pub fn throw(param: *MalType) !*MalType {
@@ -209,16 +233,16 @@ pub fn throw(param: *MalType) !*MalType {
     return error.MalException;
 }
 
-pub fn apply(allocator: Allocator, params: MalType.List) !*MalType {
-    const num_params = params.items.len;
-    const function = params.items[0];
-    const items = params.items[num_params - 1].asSlice() catch return error.EvalApplyInvalidOperands;
+pub fn apply(allocator: Allocator, params: MalType.Slice) !*MalType {
+    const num_params = params.len;
+    const function = params[0];
+    const items = params[num_params - 1].toSlice(allocator) catch return error.EvalApplyInvalidOperands;
     if (num_params == 2) {
         return function.apply(allocator, items);
     }
     const num_args = num_params - 2 + items.len;
-    var args_list = try MalType.List.initCapacity(allocator, num_args);
-    for (params.items[1 .. num_params - 2]) |param| {
+    var args_list = try std.ArrayList(*MalType).initCapacity(allocator, num_args);
+    for (params[1 .. num_params - 1]) |param| {
         args_list.appendAssumeCapacity(param);
     }
     for (items) |param| {
@@ -227,14 +251,14 @@ pub fn apply(allocator: Allocator, params: MalType.List) !*MalType {
     return function.apply(allocator, args_list.items);
 }
 
-pub fn map(allocator: Allocator, params: MalType.List) !*MalType {
-    const function = params.items[0];
-    const items = params.items[1].asSlice() catch return error.EvalMapInvalidOperands;
-    var result = try MalType.List.initCapacity(allocator, items.len);
+pub fn map(allocator: Allocator, params: MalType.Slice) !*MalType {
+    const function = params[0];
+    const items = params[1].toSlice(allocator) catch return error.EvalMapInvalidOperands;
+    var result = try std.ArrayList(*MalType).initCapacity(allocator, items.len);
     for (items) |param| {
         result.appendAssumeCapacity(try function.apply(allocator, &.{param}));
     }
-    return MalType.makeList(allocator, result);
+    return MalType.makeList(allocator, result.items);
 }
 
 pub fn is_true(param: *MalType) bool {
@@ -263,15 +287,11 @@ pub fn is_keyword(param: *MalType) bool {
 
 pub fn vec(allocator: Allocator, param: *MalType) !*MalType {
     if (param.* == .vector) return param;
-    return MalType.makeVector(allocator, try param.asList());
+    return MalType.makeVector(allocator, try MalType.arrayListFromList(allocator, param.list));
 }
 
-pub fn vector(allocator: Allocator, params: MalType.List) !*MalType {
-    var result = try MalType.Vector.initCapacity(allocator, params.items.len);
-    for (params.items) |item| {
-        result.appendAssumeCapacity(item);
-    }
-    return MalType.makeVector(allocator, result);
+pub fn vector(allocator: Allocator, params: MalType.Slice) !*MalType {
+    return MalType.makeVectorFromSlice(allocator, params);
 }
 
 pub fn is_vector(param: *MalType) bool {
@@ -282,7 +302,7 @@ pub fn is_sequential(param: *MalType) bool {
     return param.* == .list or param.* == .vector;
 }
 
-pub fn hash_map(allocator: Allocator, params: MalType.List) !*MalType {
+pub fn hash_map(allocator: Allocator, params: MalType.Slice) !*MalType {
     return MalType.makeHashMap(allocator, params);
 }
 
@@ -290,10 +310,10 @@ pub fn is_hash_map(param: *MalType) bool {
     return param.* == .hash_map;
 }
 
-pub fn assoc(allocator: Allocator, params: MalType.List) !*MalType {
-    const hash = try params.items[0].asHashMap();
-    const items = params.items[1..];
-    var hash_list = try MalType.List.initCapacity(allocator, 2 * hash.count() + items.len);
+pub fn assoc(allocator: Allocator, params: MalType.Slice) !*MalType {
+    const hash = try params[0].asHashMap();
+    const items = params[1..];
+    var hash_list = try std.ArrayList(*MalType).initCapacity(allocator, 2 * hash.count() + items.len);
     var it = hash.iterator();
     while (it.next()) |entry| {
         hash_list.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
@@ -302,13 +322,13 @@ pub fn assoc(allocator: Allocator, params: MalType.List) !*MalType {
     for (items) |item| {
         hash_list.appendAssumeCapacity(item);
     }
-    return MalType.makeHashMap(allocator, hash_list);
+    return MalType.makeHashMap(allocator, hash_list.items);
 }
 
-pub fn dissoc(allocator: Allocator, params: MalType.List) !*MalType {
-    const hash = try params.items[0].asHashMap();
-    const keys_to_remove = params.items[1..];
-    var hash_list = try MalType.List.initCapacity(allocator, 2 * hash.count());
+pub fn dissoc(allocator: Allocator, params: MalType.Slice) !*MalType {
+    const hash = try params[0].asHashMap();
+    const keys_to_remove = params[1..];
+    var hash_list = try std.ArrayList(*MalType).initCapacity(allocator, 2 * hash.count());
     var it = hash.iterator();
     while (it.next()) |entry| {
         for (keys_to_remove) |key| {
@@ -318,12 +338,11 @@ pub fn dissoc(allocator: Allocator, params: MalType.List) !*MalType {
             hash_list.appendAssumeCapacity(entry.value_ptr.*);
         }
     }
-    return MalType.makeHashMap(allocator, hash_list);
+    return MalType.makeHashMap(allocator, hash_list.items);
 }
 
 pub fn get(allocator: Allocator, param: *MalType, key: *MalType) !*MalType {
     const hash = try param.asHashMap();
-    // TODO: check this
     return hash.get(try key.asKey()) orelse MalType.makeNil(allocator);
 }
 
@@ -334,22 +353,22 @@ pub fn contains(param: *MalType, key: *MalType) types.EvalError!bool {
 
 pub fn keys(allocator: Allocator, param: *MalType) !*MalType {
     const hash = try param.asHashMap();
-    var result_list = try MalType.List.initCapacity(allocator, hash.count());
+    var result_list = try std.ArrayList(*MalType).initCapacity(allocator, hash.count());
     var it = hash.keyIterator();
     while (it.next()) |key_ptr| {
         result_list.appendAssumeCapacity(try MalType.makeKey(allocator, key_ptr.*));
     }
-    return MalType.makeList(allocator, result_list);
+    return MalType.makeList(allocator, result_list.items);
 }
 
 pub fn vals(allocator: Allocator, param: *MalType) !*MalType {
     const hash = try param.asHashMap();
-    var result_list = try MalType.List.initCapacity(allocator, hash.count());
+    var result_list = try std.ArrayList(*MalType).initCapacity(allocator, hash.count());
     var it = hash.valueIterator();
     while (it.next()) |value_ptr| {
         result_list.appendAssumeCapacity(value_ptr.*);
     }
-    return MalType.makeList(allocator, result_list);
+    return MalType.makeList(allocator, result_list.items);
 }
 
 const input_buffer_length = 256;
@@ -368,27 +387,15 @@ pub fn time_ms() Number {
     return std.time.milliTimestamp();
 }
 
-pub fn conj(allocator: Allocator, param: *MalType, params: MalType.List) !*MalType {
+pub fn conj(allocator: Allocator, param: *MalType, params: MalType.Slice) !*MalType {
     switch (param.*) {
-        .list => |list| {
-            var result = try MalType.List.initCapacity(allocator, list.items.len + params.items.len);
-            var i = params.items.len;
-            while (i > 0) {
-                i -= 1;
-                const item = params.items[i];
-                result.appendAssumeCapacity(item);
-            }
-            for (list.items) |item| {
-                result.appendAssumeCapacity(item);
-            }
-            return MalType.makeList(allocator, result);
-        },
+        .list => |list| return MalType.makeListPrependSlice(allocator, list, params),
         .vector => |vector| {
-            var result = try MalType.Vector.initCapacity(allocator, vector.items.len + params.items.len);
+            var result = try MalType.Vector.initCapacity(allocator, vector.items.len + params.len);
             for (vector.items) |item| {
                 result.appendAssumeCapacity(item);
             }
-            for (params.items) |item| {
+            for (params) |item| {
                 result.appendAssumeCapacity(item);
             }
             return MalType.makeVector(allocator, result);
@@ -399,16 +406,16 @@ pub fn conj(allocator: Allocator, param: *MalType, params: MalType.List) !*MalTy
 
 pub fn seq(allocator: Allocator, param: *MalType) !*MalType {
     switch (param.*) {
-        .list => |list| return if (list.items.len == 0) MalType.makeNil(allocator) else param,
-        .vector => |vector| return if (vector.items.len == 0) MalType.makeNil(allocator) else MalType.makeList(allocator, vector),
+        .nil => return param,
+        .list => |list| return if (list.first != null) param else MalType.makeNil(allocator),
+        .vector => |vector| return if (vector.items.len > 0) MalType.makeList(allocator, vector.items) else MalType.makeNil(allocator),
         .string => |string| {
-            var result = try MalType.List.initCapacity(allocator, string.len);
+            var result = try std.ArrayList(*MalType).initCapacity(allocator, string.len);
             for (string) |_, index| {
                 result.appendAssumeCapacity(try MalType.makeString(allocator, string[index .. index + 1]));
             }
-            return MalType.makeList(allocator, result);
+            return MalType.makeList(allocator, result.items);
         },
-        .nil => return param,
         else => return error.EvalSeqInvalidOperands,
     }
 }
@@ -429,7 +436,7 @@ pub fn is_macro(param: *MalType) bool {
     return param.* == .closure and param.closure.is_macro;
 }
 
-pub fn not_implemented(allocator: Allocator, params: MalType.List) !*MalType {
+pub fn not_implemented(allocator: Allocator, params: MalType.Slice) !*MalType {
     _ = allocator;
     _ = params;
     return error.NotImplemented;

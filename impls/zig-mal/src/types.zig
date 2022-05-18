@@ -47,9 +47,10 @@ pub const MalType = union(enum) {
     pub const String = Str;
     pub const Symbol = Str;
 
-    pub const List = std.ArrayList(*MalType);
+    pub const Slice = []*MalType;
+
+    pub const List = std.SinglyLinkedList(*MalType);
     pub const Vector = std.ArrayList(*MalType);
-    // pub const HashMap = std.StringHashMap(*MalType);
     pub const HashMap = std.StringHashMap(*MalType);
 
     pub const Parameters = std.ArrayList(Symbol);
@@ -70,14 +71,16 @@ pub const MalType = union(enum) {
         op_val_val_out_val: fn (a: *MalType, b: *MalType) EvalError!*MalType,
         op_alloc_val_val_out_val: fn (allocator: Allocator, a: *MalType, b: *MalType) EvalError!*MalType,
         // varargs primitives
-        op_alloc_varargs_out_val: fn (allocator: Allocator, args: List) EvalError!*MalType,
-        op_alloc_val_varargs_out_val: fn (allocator: Allocator, a: *MalType, args: List) EvalError!*MalType,
+        op_alloc_varargs_out_val: fn (allocator: Allocator, args: Slice) EvalError!*MalType,
+        op_alloc_val_varargs_out_val: fn (allocator: Allocator, a: *MalType, args: Slice) EvalError!*MalType,
 
         pub fn make(fn_ptr: anytype) Primitive {
             const type_info = @typeInfo(@TypeOf(fn_ptr));
             std.debug.assert(type_info == .Fn);
             const args = type_info.Fn.args;
             const return_type = type_info.Fn.return_type.?;
+
+            // TODO: check return_type == Error!*MalType
             switch (args.len) {
                 0 => {
                     if (return_type == Number)
@@ -111,11 +114,9 @@ pub const MalType = union(enum) {
                         return .{ .op_val_val_out_val = fn_ptr };
                     }
                     if (a_type == Allocator and b_type == *MalType) {
-                        // TODO: and return_type == Error!*MalType
                         return .{ .op_alloc_val_out_val = fn_ptr };
                     }
-                    if (a_type == Allocator and b_type == List) {
-                        // TODO: and return_type == Error!*MalType
+                    if (a_type == Allocator and b_type == Slice) {
                         return .{ .op_alloc_varargs_out_val = fn_ptr };
                     }
                 },
@@ -124,18 +125,16 @@ pub const MalType = union(enum) {
                     const b_type = args[1].arg_type.?;
                     const c_type = args[2].arg_type.?;
                     if (a_type == Allocator and b_type == *MalType and c_type == *MalType) {
-                        // TODO: and return_type == Error!*MalType
                         return .{ .op_alloc_val_val_out_val = fn_ptr };
                     }
-                    if (a_type == Allocator and b_type == *MalType and c_type == MalType.List) {
-                        // TODO: and return_type == Error!*MalType
+                    if (a_type == Allocator and b_type == *MalType and c_type == Slice) {
                         return .{ .op_alloc_val_varargs_out_val = fn_ptr };
                     }
                 },
                 else => unreachable,
             }
         }
-        pub fn apply(primitive: Primitive, allocator: Allocator, args: []*MalType) !*MalType {
+        pub fn apply(primitive: Primitive, allocator: Allocator, args: Slice) !*MalType {
             // TODO: can probably be compile-time generated from function type info
             switch (primitive) {
                 .op_num_num_out_num => |op| {
@@ -187,15 +186,11 @@ pub const MalType = union(enum) {
                     return op(allocator, args[0], args[1]);
                 },
                 .op_alloc_varargs_out_val => |op| {
-                    var args_list = try List.initCapacity(allocator, args.len);
-                    for (args) |arg| args_list.appendAssumeCapacity(arg);
-                    return op(allocator, args_list);
+                    return op(allocator, args);
                 },
                 .op_alloc_val_varargs_out_val => |op| {
                     if (args.len < 2) return error.EvalInvalidOperands;
-                    var args_list = try List.initCapacity(allocator, args.len - 1);
-                    for (args[1..]) |arg| args_list.appendAssumeCapacity(arg);
-                    return op(allocator, args[0], args_list);
+                    return op(allocator, args[0], args[1..]);
                 },
             }
         }
@@ -232,7 +227,7 @@ pub const MalType = union(enum) {
         NotKey,
         NotList,
         NotNumber,
-        NotSlice,
+        NotSeq,
         NotSymbol,
         NotString,
     };
@@ -286,24 +281,53 @@ pub const MalType = union(enum) {
         return make(allocator, .{ .atom = value });
     }
 
-    pub fn makeList(allocator: Allocator, list: List) !*MalType {
-        return make(allocator, .{ .list = list });
+    pub fn makeListNode(allocator: Allocator, data: *MalType) !*List.Node {
+        var ptr = try allocator.create(List.Node);
+        ptr.* = .{ .data = data, .next = null };
+        return ptr;
     }
 
     pub fn makeListEmpty(allocator: Allocator) !*MalType {
-        return make(allocator, .{ .list = List.init(allocator) });
+        return make(allocator, .{ .list = .{ .first = null } });
     }
 
-    pub fn makeListCapacity(allocator: Allocator, num: usize) !*MalType {
-        return make(allocator, .{ .list = try List.initCapacity(allocator, num) });
+    pub fn makeListFromNode(allocator: Allocator, node: ?*List.Node) !*MalType {
+        return make(allocator, .{ .list = .{ .first = node } });
     }
 
-    pub fn makeListFromSlice(allocator: Allocator, slice: []*MalType) !*MalType {
-        var list = try List.initCapacity(allocator, slice.len);
+    pub fn makeList(allocator: Allocator, slice: []*MalType) !*MalType {
+        return make(allocator, .{ .list = try listFromSlice(allocator, slice) });
+    }
+
+    pub fn makeListPrependSlice(allocator: Allocator, list: List, slice: Slice) !*MalType {
+        var result_list = list;
         for (slice) |item| {
-            list.appendAssumeCapacity(item);
+            result_list.prepend(try MalType.makeListNode(allocator, item));
         }
-        return make(allocator, .{ .list = list });
+        return make(allocator, .{ .list = result_list });
+    }
+
+    pub fn listFromSlice(allocator: Allocator, slice: Slice) !List {
+        var list = List{ .first = null };
+        var i = slice.len;
+        while (i > 0) {
+            i -= 1;
+            list.prepend(try makeListNode(allocator, slice[i]));
+        }
+        return list;
+    }
+
+    pub fn arrayListFromList(allocator: Allocator, list: List) !std.ArrayList(*MalType) {
+        var result = std.ArrayList(*MalType).init(allocator);
+        var it = list.first;
+        while (it) |node| : (it = node.next) {
+            try result.append(node.data);
+        }
+        return result;
+    }
+
+    pub fn sliceFromList(allocator: Allocator, list: List) !Slice {
+        return (try arrayListFromList(allocator, list)).items;
     }
 
     pub fn makeVector(allocator: Allocator, vector: Vector) !*MalType {
@@ -323,16 +347,16 @@ pub const MalType = union(enum) {
         for (slice) |item| {
             vector.appendAssumeCapacity(item);
         }
-        return make(allocator, .{ .vector = vector });
+        return makeVector(allocator, vector);
     }
 
-    pub fn makeHashMap(allocator: Allocator, list: List) !*MalType {
+    pub fn makeHashMap(allocator: Allocator, slice: Slice) !*MalType {
         var hash_map = HashMap.init(allocator);
-        try hash_map.ensureTotalCapacity(@intCast(u32, list.items.len / 2));
+        try hash_map.ensureTotalCapacity(@intCast(u32, slice.len / 2));
         var i: usize = 0;
-        while (i + 1 < list.items.len) : (i += 2) {
-            const key = try list.items[i].asKey();
-            const value = list.items[i + 1];
+        while (i + 1 < slice.len) : (i += 2) {
+            const key = try slice[i].asKey();
+            const value = slice[i + 1];
             hash_map.putAssumeCapacityNoClobber(key, value);
         }
         return make(allocator, .{ .hash_map = hash_map });
@@ -414,9 +438,16 @@ pub const MalType = union(enum) {
             .string => |string| std.mem.eql(u8, string, other.string),
             .symbol => |symbol| std.mem.eql(u8, symbol, other.symbol),
             .t, .f, .nil => true,
-            .list => |list| list.items.len == other.list.items.len and for (list.items) |item, i| {
-                if (!item.equals(other.list.items[i])) break false;
-            } else true,
+            .list => |list| blk: {
+                var it = list.first;
+                var it_other = other.list.first;
+                break :blk while (it) |node| : ({
+                    it = node.next;
+                    it_other = it_other.?.next;
+                }) {
+                    if (it_other) |other_node| (if (!node.data.equals(other_node.data)) break false) else break false;
+                } else it_other == null;
+            },
             .vector => |vector| vector.items.len == other.vector.items.len and for (vector.items) |item, i| {
                 if (!item.equals(other.vector.items[i])) break false;
             } else true,
@@ -493,15 +524,15 @@ pub const MalType = union(enum) {
         return result;
     }
 
-    pub fn asSlice(self: Self) ![]*MalType {
+    pub fn toSlice(self: Self, allocator: Allocator) !Slice {
         return switch (self) {
-            .list => |list| list.items,
+            .list => |list| MalType.sliceFromList(allocator, list),
             .vector => |vector| vector.items,
-            else => error.NotSlice,
+            else => error.NotSeq,
         };
     }
 
-    pub fn apply(self: Self, allocator: Allocator, args: []*MalType) !*MalType {
+    pub fn apply(self: Self, allocator: Allocator, args: Slice) !*MalType {
         return switch (self) {
             .primitive => |primitive| primitive.apply(allocator, args),
             .closure => |closure| closure.apply(allocator, args),
