@@ -499,6 +499,14 @@ pub const MalType = union(enum) {
             .vector => |vector| vector.items.len == other.vector.items.len and for (vector.items) |item, i| {
                 if (!item.equals(other.vector.items[i])) break false;
             } else true,
+            .hash_map => |hash_map| hash_map.count() == other.hash_map.count() and blk: {
+                var it = hash_map.iterator();
+                break :blk while (it.next()) |entry| {
+                    if (other.hash_map.get(entry.key_ptr.*)) |other_item| {
+                        if (!entry.value_ptr.*.equals(other_item)) break false;
+                    } else break false;
+                } else true;
+            },
             .closure => |closure| blk: {
                 if (closure.env != other.closure.env) break :blk false;
                 if (!closure.body.equals(other.closure.body)) break :blk false;
