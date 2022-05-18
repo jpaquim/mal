@@ -35,7 +35,7 @@ pub const Env = struct {
         for (binds) |symbol, i| {
             if (std.mem.eql(u8, symbol, "&")) {
                 const rest_symbol = binds[i + 1];
-                try self.set(rest_symbol, try MalType.makeListFromSlice(allocator, exprs[i..]));
+                try self.set(rest_symbol, try MalType.makeList(allocator, exprs[i..]));
                 break;
             }
             try self.set(symbol, exprs[i]);
