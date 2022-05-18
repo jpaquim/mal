@@ -52,7 +52,7 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     const tokens = try tokenize(allocator, input);
     // check if there are no tokens in which case we throw a special error to
     // continue the main REPL loop
-    if (tokens.items.len == 0) {
+    if (tokens.items.len == 0 or tokens.items.len == 1 and tokens.items[0][0] == ';') {
         return error.EmptyInput;
     }
 
@@ -61,7 +61,11 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     // read a mal form
     const form = (try read_form(allocator, &reader)) orelse error.EndOfInput;
     // check if there are still remaining tokens after the form is read
-    if (reader.peek()) |_| {
+    if (reader.peek()) |token| blk: {
+        // check if the token is a comment, in which case there is no error
+        if (token[0] == ';') {
+            break :blk;
+        }
         // there should only be a single top-level form, so any remaining token
         // indicates an error
         return error.TokensPastFormEnd;
