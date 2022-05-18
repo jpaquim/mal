@@ -346,6 +346,7 @@ pub fn dissoc(allocator: Allocator, params: MalType.Slice) !*MalType {
 }
 
 pub fn get(allocator: Allocator, param: *MalType, key: *MalType) !*MalType {
+    if (param.* == .nil) return param;
     const hash = try param.asHashMap();
     return hash.get(try key.asKey()) orelse MalType.makeNil(allocator);
 }
