@@ -59,7 +59,7 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     // create a Reader instance with the tokens list
     var reader = Reader.init(tokens);
     // read a mal form
-    const form = (try read_form(allocator, &reader)) orelse error.EndOfInput;
+    const form = (try read_form(allocator, &reader)) orelse return error.EndOfInput;
     // check if there are still remaining tokens after the form is read
     if (reader.peek()) |token| blk: {
         // check if the token is a comment, in which case there is no error

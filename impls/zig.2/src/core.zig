@@ -105,6 +105,9 @@ pub fn read_string(allocator: Allocator, param: *MalType) !*MalType {
     const string = try param.asString();
     return if (reader.read_str(allocator, string)) |result| result else |err| switch (err) {
         error.EmptyInput => MalType.makeNil(allocator),
+        error.EndOfInput => Exception.throwMessage(allocator, "end of input", err),
+        error.ListNoClosingTag => Exception.throwMessage(allocator, "unbalanced list form", err),
+        error.StringLiteralNoClosingTag => Exception.throwMessage(allocator, "unbalanced string literal", err),
         else => err,
     };
 }
