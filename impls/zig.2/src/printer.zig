@@ -40,9 +40,9 @@ pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool)
         .keyword => |keyword| try std.fmt.allocPrint(allocator, ":{s}", .{keyword[2..]}),
         .string => |string| if (print_readably) try std.fmt.allocPrint(allocator, "\"{s}\"", .{replaceWithEscapeSequences(allocator, string)}) else string,
         .symbol => |symbol| symbol,
-        .list => |list| try printJoinDelims(allocator, "(", ")", try MalType.sliceFromList(allocator, list), print_readably),
-        .vector => |vector| try printJoinDelims(allocator, "[", "]", vector.items, print_readably),
-        .hash_map => |hash_map| try printJoinDelims(allocator, "{", "}", try MalType.sliceFromHashMap(allocator, hash_map), print_readably),
+        .list => |list| try printJoinDelims(allocator, "(", ")", try MalType.sliceFromList(allocator, list.data), print_readably),
+        .vector => |vector| try printJoinDelims(allocator, "[", "]", vector.data.items, print_readably),
+        .hash_map => |hash_map| try printJoinDelims(allocator, "{", "}", try MalType.sliceFromHashMap(allocator, hash_map.data), print_readably),
     };
 }
 

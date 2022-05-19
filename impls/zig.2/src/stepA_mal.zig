@@ -26,7 +26,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
 
         switch (current_ast.*) {
             .list => |list| {
-                const list_items = try MalType.sliceFromList(allocator, list);
+                const list_items = try MalType.sliceFromList(allocator, list.data);
                 if (list_items.len == 0) return MalType.makeListEmpty(allocator) else {
                     // apply phase
                     const first = list_items[0];
@@ -166,7 +166,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                     const args = evaled_items[1..];
 
                     switch (function.*) {
-                        .primitive => |primitive| return primitive.apply(allocator, args),
+                        .primitive => |primitive| return primitive.data.apply(allocator, args),
                         .closure => |closure| {
                             const parameters = closure.parameters.items;
                             // if (parameters.len != args.len) {
@@ -192,8 +192,8 @@ fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
             return Exception.throwMessage(allocator, try std.fmt.allocPrint(allocator, "'{s}' not found", .{symbol}), err);
         },
         .list => |list| {
-            var results = try std.ArrayList(*MalType).initCapacity(allocator, list.len());
-            var it = list.first;
+            var results = try std.ArrayList(*MalType).initCapacity(allocator, list.data.len());
+            var it = list.data.first;
             while (it) |node| : (it = node.next) {
                 const result = try EVAL(allocator, node.data, env);
                 results.appendAssumeCapacity(result);
@@ -201,16 +201,16 @@ fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
             return MalType.makeList(allocator, results.items);
         },
         .vector => |vector| {
-            var results = try std.ArrayList(*MalType).initCapacity(allocator, vector.items.len);
-            for (vector.items) |item| {
+            var results = try std.ArrayList(*MalType).initCapacity(allocator, vector.data.items.len);
+            for (vector.data.items) |item| {
                 const result = try EVAL(allocator, item, env);
                 results.appendAssumeCapacity(result);
             }
             return MalType.makeVector(allocator, results);
         },
         .hash_map => |hash_map| {
-            var results = try std.ArrayList(*MalType).initCapacity(allocator, 2 * hash_map.count());
-            var it = hash_map.iterator();
+            var results = try std.ArrayList(*MalType).initCapacity(allocator, 2 * hash_map.data.count());
+            var it = hash_map.data.iterator();
             while (it.next()) |entry| {
                 results.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
                 const result = try EVAL(allocator, entry.value_ptr.*, env);
@@ -243,7 +243,7 @@ fn eval(allocator: Allocator, ast: *MalType) EvalError!*MalType {
 fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
     switch (ast.*) {
         .list => |list| {
-            const list_items = try MalType.sliceFromList(allocator, list);
+            const list_items = try MalType.sliceFromList(allocator, list.data);
             if (list_items.len > 0 and list_items[0].isSymbol("unquote")) {
                 if (list_items.len < 2) return error.EvalUnquoteInvalidOperands;
                 return list_items[1];
@@ -254,9 +254,9 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
                 i -= 1;
                 const element = list_items[i];
                 if (element.isListWithFirstSymbol("splice-unquote")) {
-                    if (element.list.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
+                    if (element.list.data.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
                     const concat = try MalType.makeSymbol(allocator, "concat");
-                    result = try MalType.makeList(allocator, &.{ concat, element.list.first.?.next.?.data, result });
+                    result = try MalType.makeList(allocator, &.{ concat, element.list.data.first.?.next.?.data, result });
                 } else {
                     const cons = try MalType.makeSymbol(allocator, "cons");
                     result = try MalType.makeList(allocator, &.{ cons, try quasiquote(allocator, element), result });
@@ -266,14 +266,14 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
         },
         .vector => |vector| {
             var result = try MalType.makeListEmpty(allocator);
-            var i = vector.items.len;
+            var i = vector.data.items.len;
             while (i > 0) {
                 i -= 1;
-                const element = vector.items[i];
+                const element = vector.data.items[i];
                 if (element.isListWithFirstSymbol("splice-unquote")) {
-                    if (element.list.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
+                    if (element.list.data.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
                     const concat = try MalType.makeSymbol(allocator, "concat");
-                    result = try MalType.makeList(allocator, &.{ concat, element.list.first.?.next.?.data, result });
+                    result = try MalType.makeList(allocator, &.{ concat, element.list.data.first.?.next.?.data, result });
                 } else {
                     const cons = try MalType.makeSymbol(allocator, "cons");
                     result = try MalType.makeList(allocator, &.{ cons, try quasiquote(allocator, element), result });
@@ -291,8 +291,8 @@ fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
 }
 
 fn is_macro_call(ast: *MalType, env: *Env) bool {
-    if (ast.* == .list and ast.list.first != null and ast.list.first.?.data.* == .symbol) {
-        const symbol = ast.list.first.?.data.symbol;
+    if (ast.* == .list and ast.list.data.first != null and ast.list.data.first.?.data.* == .symbol) {
+        const symbol = ast.list.data.first.?.data.symbol;
         if (env.get(symbol)) |value| {
             return value.* == .closure and value.closure.is_macro;
         } else |_| {}
@@ -303,7 +303,7 @@ fn is_macro_call(ast: *MalType, env: *Env) bool {
 fn macroexpand(allocator: Allocator, ast: *MalType, env: *Env) !*MalType {
     var current_ast = ast;
     while (is_macro_call(current_ast, env)) {
-        const macro = try env.get(current_ast.list.first.?.data.symbol);
+        const macro = try env.get(current_ast.list.data.first.?.data.symbol);
         current_ast = try macro.apply(allocator, (try current_ast.toSlice(allocator))[1..]);
     }
     return current_ast;
