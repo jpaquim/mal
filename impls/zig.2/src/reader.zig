@@ -117,6 +117,14 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
                     }
                     return readerMacro(allocator, reader, "unquote");
                 },
+                // ^metadata form => (with-meta form metadata)
+                '^' => {
+                    _ = reader.next();
+                    const prefix = try MalType.makeSymbol(allocator, "with-meta");
+                    const metadata_form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
+                    const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
+                    return MalType.makeList(allocator, &.{ prefix, form, metadata_form });
+                },
                 else => return read_atom(allocator, reader),
             }
         else
