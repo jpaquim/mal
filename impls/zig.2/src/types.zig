@@ -569,6 +569,28 @@ pub const MalType = union(enum) {
             else => error.NotFunction,
         };
     }
+
+    pub fn metadata(self: Self) ?*MalType {
+        return switch (self) {
+            .list => |list| list.metadata,
+            .vector => |vector| vector.metadata,
+            .hash_map => |hash_map| hash_map.metadata,
+            .primitive => |primitive| primitive.metadata,
+            .closure => |closure| closure.metadata,
+            else => null,
+        };
+    }
+
+    pub fn metadataPointer(self: *Self) ?*?Metadata {
+        return switch (self.*) {
+            .list => |*list| &list.metadata,
+            .vector => |*vector| &vector.metadata,
+            .hash_map => |*hash_map| &hash_map.metadata,
+            .primitive => |*primitive| &primitive.metadata,
+            .closure => |*closure| &closure.metadata,
+            else => null,
+        };
+    }
 };
 
 pub const EvalError = error{
@@ -593,6 +615,7 @@ pub const EvalError = error{
     EvalMapInvalidOperands,
     EvalConjInvalidOperands,
     EvalSeqInvalidOperands,
+    EvalWithMetaInvalidOperands,
     EvalInvalidOperand,
     EvalInvalidOperands,
     EvalNotSymbolOrFn,
