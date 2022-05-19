@@ -413,19 +413,19 @@ pub fn conj(allocator: Allocator, param: *MalType, params: MalType.Slice) !*MalT
 }
 
 pub fn seq(allocator: Allocator, param: *MalType) !*MalType {
-    switch (param.*) {
-        .nil => return param,
-        .list => |list| return if (list.data.first != null) param else MalType.makeNil(allocator),
-        .vector => |vector| return if (vector.data.items.len > 0) MalType.makeList(allocator, vector.data.items) else MalType.makeNil(allocator),
-        .string => |string| {
+    return switch (param.*) {
+        .nil => param,
+        .list => |list| if (list.data.first != null) param else MalType.makeNil(allocator),
+        .vector => |vector| if (vector.data.items.len > 0) MalType.makeList(allocator, vector.data.items) else MalType.makeNil(allocator),
+        .string => |string| if (string.len == 0) MalType.makeNil(allocator) else blk: {
             var result = try std.ArrayList(*MalType).initCapacity(allocator, string.len);
             for (string) |_, index| {
                 result.appendAssumeCapacity(try MalType.makeString(allocator, string[index .. index + 1]));
             }
-            return MalType.makeList(allocator, result.items);
+            break :blk MalType.makeList(allocator, result.items);
         },
-        else => return error.EvalSeqInvalidOperands,
-    }
+        else => error.EvalSeqInvalidOperands,
+    };
 }
 
 pub fn is_string(param: *MalType) bool {
@@ -444,10 +444,16 @@ pub fn is_macro(param: *MalType) bool {
     return param.* == .closure and param.closure.is_macro;
 }
 
-pub fn not_implemented(allocator: Allocator, params: MalType.Slice) !*MalType {
-    _ = allocator;
-    _ = params;
-    return error.NotImplemented;
+pub fn meta(allocator: Allocator, param: *MalType) !*MalType {
+    return param.metadata() orelse try MalType.makeNil(allocator);
+}
+
+pub fn with_meta(allocator: Allocator, param: *MalType, metadata: *MalType) !*MalType {
+    var result = try MalType.make(allocator, param.*);
+    if (result.metadataPointer()) |metadata_ptr| {
+        metadata_ptr.* = metadata;
+    } else return error.EvalWithMetaInvalidOperands;
+    return result;
 }
 
 pub const ns = .{
@@ -503,8 +509,6 @@ pub const ns = .{
     .@"keys" = keys,
     .@"vals" = vals,
     .@"readline" = readline,
-    .@"meta" = not_implemented,
-    .@"with-meta" = not_implemented,
     .@"time-ms" = time_ms,
     .@"conj" = conj,
     .@"string?" = is_string,
@@ -512,4 +516,6 @@ pub const ns = .{
     .@"fn?" = is_fn,
     .@"macro?" = is_macro,
     .@"seq" = seq,
+    .@"meta" = meta,
+    .@"with-meta" = with_meta,
 };
