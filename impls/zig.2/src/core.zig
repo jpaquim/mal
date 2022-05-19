@@ -61,8 +61,8 @@ pub fn is_empty(param: *MalType) bool {
 
 pub fn count(param: *MalType) Number {
     return switch (param.*) {
-        .list => |list| @intCast(Number, list.len()),
-        .vector => |vector| @intCast(Number, vector.items.len),
+        .list => |list| @intCast(Number, list.data.len()),
+        .vector => |vector| @intCast(Number, vector.data.items.len),
         .nil => 0,
         // TODO: error if not list?
         else => -1,
@@ -161,10 +161,10 @@ pub fn cons(allocator: Allocator, params: MalType.Slice) !*MalType {
     const tail = params[1];
     switch (tail.*) {
         .list => |list| {
-            return MalType.makeListPrependSlice(allocator, list, &.{head});
+            return MalType.makeListPrependSlice(allocator, list.data, &.{head});
         },
         .vector => |vector| {
-            return MalType.makeListPrependSlice(allocator, try MalType.listFromSlice(allocator, vector.items), &.{head});
+            return MalType.makeListPrependSlice(allocator, try MalType.listFromSlice(allocator, vector.data.items), &.{head});
         },
         else => return error.EvalConsInvalidOperands,
     }
@@ -175,13 +175,13 @@ pub fn concat(allocator: Allocator, params: MalType.Slice) !*MalType {
     for (params) |param| {
         switch (param.*) {
             .list => |list| {
-                var it = list.first;
+                var it = list.data.first;
                 while (it) |node| : (it = node.next) {
                     try result.append(node.data);
                 }
             },
             .vector => |vector| {
-                for (vector.items) |nested| {
+                for (vector.data.items) |nested| {
                     try result.append(nested);
                 }
             },
@@ -196,7 +196,7 @@ pub fn nth(allocator: Allocator, param: *MalType, index: *MalType) !*MalType {
     return switch (param.*) {
         .list => |list| {
             var i: Number = 0;
-            var it = list.first;
+            var it = list.data.first;
             while (it) |node| : ({
                 it = node.next;
                 i += 1;
@@ -207,9 +207,9 @@ pub fn nth(allocator: Allocator, param: *MalType, index: *MalType) !*MalType {
             }
         },
         .vector => |vector| {
-            if (n >= vector.items.len)
+            if (n >= vector.data.items.len)
                 return Exception.throwMessage(allocator, "index out of range", error.EvalIndexOutOfRange);
-            return vector.items[@intCast(usize, n)];
+            return vector.data.items[@intCast(usize, n)];
         },
         else => error.EvalNthInvalidOperands,
     };
@@ -218,8 +218,8 @@ pub fn nth(allocator: Allocator, param: *MalType, index: *MalType) !*MalType {
 pub fn first(allocator: Allocator, param: *MalType) !*MalType {
     return switch (param.*) {
         .nil => MalType.makeNil(allocator),
-        .list => |list| if (list.first) |node| node.data else MalType.makeNil(allocator),
-        .vector => |vector| if (vector.items.len > 0) vector.items[0] else MalType.makeNil(allocator),
+        .list => |list| if (list.data.first) |node| node.data else MalType.makeNil(allocator),
+        .vector => |vector| if (vector.data.items.len > 0) vector.data.items[0] else MalType.makeNil(allocator),
         else => error.EvalFirstInvalidOperands,
     };
 }
@@ -227,8 +227,8 @@ pub fn first(allocator: Allocator, param: *MalType) !*MalType {
 pub fn rest(allocator: Allocator, param: *MalType) !*MalType {
     return switch (param.*) {
         .nil => MalType.makeListEmpty(allocator),
-        .list => |list| if (list.first) |node| MalType.makeListFromNode(allocator, node.next) else MalType.makeListEmpty(allocator),
-        .vector => |vector| if (vector.items.len > 1) MalType.makeList(allocator, vector.items[1..]) else MalType.makeListEmpty(allocator),
+        .list => |list| if (list.data.first) |node| MalType.makeListFromNode(allocator, node.next) else MalType.makeListEmpty(allocator),
+        .vector => |vector| if (vector.data.items.len > 1) MalType.makeList(allocator, vector.data.items[1..]) else MalType.makeListEmpty(allocator),
         else => error.EvalRestInvalidOperands,
     };
 }
@@ -294,7 +294,7 @@ pub fn is_keyword(param: *MalType) bool {
 
 pub fn vec(allocator: Allocator, param: *MalType) !*MalType {
     if (param.* == .vector) return param;
-    return MalType.makeVector(allocator, try MalType.arrayListFromList(allocator, param.list));
+    return MalType.makeVector(allocator, try MalType.arrayListFromList(allocator, param.list.data));
 }
 
 pub fn vector(allocator: Allocator, params: MalType.Slice) !*MalType {
@@ -397,10 +397,10 @@ pub fn time_ms() Number {
 
 pub fn conj(allocator: Allocator, param: *MalType, params: MalType.Slice) !*MalType {
     switch (param.*) {
-        .list => |list| return MalType.makeListPrependSlice(allocator, list, params),
+        .list => |list| return MalType.makeListPrependSlice(allocator, list.data, params),
         .vector => |vector| {
-            var result = try MalType.Vector.initCapacity(allocator, vector.items.len + params.len);
-            for (vector.items) |item| {
+            var result = try MalType.Vector.initCapacity(allocator, vector.data.items.len + params.len);
+            for (vector.data.items) |item| {
                 result.appendAssumeCapacity(item);
             }
             for (params) |item| {
@@ -415,8 +415,8 @@ pub fn conj(allocator: Allocator, param: *MalType, params: MalType.Slice) !*MalT
 pub fn seq(allocator: Allocator, param: *MalType) !*MalType {
     switch (param.*) {
         .nil => return param,
-        .list => |list| return if (list.first != null) param else MalType.makeNil(allocator),
-        .vector => |vector| return if (vector.items.len > 0) MalType.makeList(allocator, vector.items) else MalType.makeNil(allocator),
+        .list => |list| return if (list.data.first != null) param else MalType.makeNil(allocator),
+        .vector => |vector| return if (vector.data.items.len > 0) MalType.makeList(allocator, vector.data.items) else MalType.makeNil(allocator),
         .string => |string| {
             var result = try std.ArrayList(*MalType).initCapacity(allocator, string.len);
             for (string) |_, index| {

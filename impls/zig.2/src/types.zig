@@ -4,64 +4,26 @@ const Allocator = std.mem.Allocator;
 const Env = @import("env.zig").Env;
 const reader = @import("reader.zig");
 
-pub const EvalError = error{
-    EvalDefInvalidOperands,
-    EvalDoInvalidOperands,
-    EvalIfInvalidOperands,
-    EvalLetInvalidOperands,
-    EvalQuoteInvalidOperands,
-    EvalQuasiquoteInvalidOperands,
-    EvalQuasiquoteexpandInvalidOperands,
-    EvalUnquoteInvalidOperands,
-    EvalSpliceunquoteInvalidOperands,
-    EvalDefmacroInvalidOperands,
-    EvalMacroexpandInvalidOperands,
-    EvalConsInvalidOperands,
-    EvalConcatInvalidOperands,
-    EvalVecInvalidOperands,
-    EvalNthInvalidOperands,
-    EvalFirstInvalidOperands,
-    EvalRestInvalidOperands,
-    EvalApplyInvalidOperands,
-    EvalMapInvalidOperands,
-    EvalConjInvalidOperands,
-    EvalSeqInvalidOperands,
-    EvalInvalidOperand,
-    EvalInvalidOperands,
-    EvalNotSymbolOrFn,
-    EnvSymbolNotFound,
-    EvalInvalidFnParamsList,
-    EvalIndexOutOfRange,
-    EvalTryInvalidOperands,
-    EvalCatchInvalidOperands,
-    EvalTryNoCatch,
-    MalException,
-    NotImplemented,
-} || Allocator.Error || MalType.Primitive.Error;
-
-pub const Exception = struct {
-    var current_exception: ?*MalType = null;
-
-    pub fn get() ?*MalType {
-        return current_exception;
-    }
-
-    pub fn clear() void {
-        current_exception = null;
-    }
-
-    pub fn throw(value: *MalType, err: EvalError) EvalError {
-        current_exception = value;
-        return err;
-    }
-
-    pub fn throwMessage(allocator: Allocator, message: []const u8, err: EvalError) EvalError {
-        current_exception = try MalType.makeString(allocator, message);
-        return err;
-    }
-};
-
 pub const MalType = union(enum) {
+    // atoms
+    t,
+    f,
+    nil,
+    number: Number,
+    keyword: String,
+    string: String,
+    symbol: Symbol,
+
+    list: ListMetadata,
+    vector: VectorMetadata,
+    hash_map: HashMapMetadata,
+
+    // functions
+    primitive: PrimitiveMetadata,
+    closure: Closure,
+
+    atom: Atom,
+
     pub const Number = i64;
 
     const Str = []const u8;
@@ -72,8 +34,25 @@ pub const MalType = union(enum) {
     pub const Slice = []*MalType;
 
     pub const List = std.SinglyLinkedList(*MalType);
+    pub const ListMetadata = struct {
+        data: List,
+        metadata: ?Metadata = null,
+
+        pub const Node = std.SinglyLinkedList(*MalType).Node;
+    };
     pub const Vector = std.ArrayList(*MalType);
+    pub const VectorMetadata = struct {
+        data: Vector,
+        metadata: ?Metadata = null,
+    };
     pub const HashMap = std.StringHashMap(*MalType);
+    pub const HashMapMetadata = struct {
+        data: HashMap,
+        metadata: ?Metadata = null,
+    };
+
+    pub const Atom = *MalType;
+    pub const Metadata = *MalType;
 
     pub const Parameters = std.ArrayList(Symbol);
     pub const Primitive = union(enum) {
@@ -218,12 +197,19 @@ pub const MalType = union(enum) {
         }
     };
 
+    pub const PrimitiveMetadata = struct {
+        data: Primitive,
+        metadata: ?Metadata = null,
+    };
+
     pub const Closure = struct {
         parameters: Parameters,
         body: *MalType,
         env: *Env,
         eval: fn (allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType,
         is_macro: bool = false,
+
+        metadata: ?Metadata = null,
 
         pub fn apply(closure: Closure, allocator: Allocator, args: []*MalType) !*MalType {
             const parameters = closure.parameters.items;
@@ -240,8 +226,6 @@ pub const MalType = union(enum) {
         }
     };
 
-    pub const Atom = *MalType;
-
     pub const TypeError = error{
         NotAtom,
         NotFunction,
@@ -253,25 +237,6 @@ pub const MalType = union(enum) {
         NotSymbol,
         NotString,
     };
-
-    // atoms
-    t,
-    f,
-    nil,
-    number: Number,
-    keyword: String,
-    string: String,
-    symbol: Symbol,
-
-    list: List,
-    vector: Vector,
-    hash_map: HashMap,
-
-    // functions
-    primitive: Primitive,
-    closure: Closure,
-
-    atom: Atom,
 
     pub fn make(allocator: Allocator, value: MalType) !*MalType {
         var ptr = try allocator.create(MalType);
@@ -310,15 +275,15 @@ pub const MalType = union(enum) {
     }
 
     pub fn makeListEmpty(allocator: Allocator) !*MalType {
-        return make(allocator, .{ .list = .{ .first = null } });
+        return make(allocator, .{ .list = .{ .data = .{ .first = null } } });
     }
 
     pub fn makeListFromNode(allocator: Allocator, node: ?*List.Node) !*MalType {
-        return make(allocator, .{ .list = .{ .first = node } });
+        return make(allocator, .{ .list = .{ .data = .{ .first = node } } });
     }
 
     pub fn makeList(allocator: Allocator, slice: []*MalType) !*MalType {
-        return make(allocator, .{ .list = try listFromSlice(allocator, slice) });
+        return make(allocator, .{ .list = .{ .data = try listFromSlice(allocator, slice) } });
     }
 
     pub fn makeListPrependSlice(allocator: Allocator, list: List, slice: Slice) !*MalType {
@@ -326,7 +291,7 @@ pub const MalType = union(enum) {
         for (slice) |item| {
             result_list.prepend(try MalType.makeListNode(allocator, item));
         }
-        return make(allocator, .{ .list = result_list });
+        return make(allocator, .{ .list = .{ .data = result_list } });
     }
 
     pub fn listFromSlice(allocator: Allocator, slice: Slice) !List {
@@ -353,15 +318,15 @@ pub const MalType = union(enum) {
     }
 
     pub fn makeVector(allocator: Allocator, vector: Vector) !*MalType {
-        return make(allocator, .{ .vector = vector });
+        return make(allocator, .{ .vector = .{ .data = vector } });
     }
 
     pub fn makeVectorEmpty(allocator: Allocator) !*MalType {
-        return make(allocator, .{ .vector = Vector.init(allocator) });
+        return make(allocator, .{ .vector = .{ .data = Vector.init(allocator) } });
     }
 
     pub fn makeVectorCapacity(allocator: Allocator, num: usize) !*MalType {
-        return make(allocator, .{ .vector = try Vector.initCapacity(allocator, num) });
+        return make(allocator, .{ .vector = .{ .data = try Vector.initCapacity(allocator, num) } });
     }
 
     pub fn makeVectorFromSlice(allocator: Allocator, slice: []*MalType) !*MalType {
@@ -381,7 +346,7 @@ pub const MalType = union(enum) {
             const value = slice[i + 1];
             hash_map.putAssumeCapacity(key, value);
         }
-        return make(allocator, .{ .hash_map = hash_map });
+        return make(allocator, .{ .hash_map = .{ .data = hash_map } });
     }
 
     pub fn sliceFromHashMap(allocator: Allocator, hash_map: MalType.HashMap) !Slice {
@@ -399,7 +364,7 @@ pub const MalType = union(enum) {
     }
 
     pub fn makePrimitive(allocator: Allocator, primitive: anytype) !*MalType {
-        return make(allocator, .{ .primitive = Primitive.make(primitive) });
+        return make(allocator, .{ .primitive = .{ .data = Primitive.make(primitive) } });
     }
 
     pub fn makeClosure(allocator: Allocator, closure: Closure) !*MalType {
@@ -487,8 +452,8 @@ pub const MalType = union(enum) {
             .symbol => |symbol| std.mem.eql(u8, symbol, other.symbol),
             .t, .f, .nil => true,
             .list => |list| blk: {
-                var it = list.first;
-                var it_other = other.list.first;
+                var it = list.data.first;
+                var it_other = other.list.data.first;
                 break :blk while (it) |node| : ({
                     it = node.next;
                     it_other = it_other.?.next;
@@ -496,13 +461,13 @@ pub const MalType = union(enum) {
                     if (it_other) |other_node| (if (!node.data.equals(other_node.data)) break false) else break false;
                 } else it_other == null;
             },
-            .vector => |vector| vector.items.len == other.vector.items.len and for (vector.items) |item, i| {
-                if (!item.equals(other.vector.items[i])) break false;
+            .vector => |vector| vector.data.items.len == other.vector.data.items.len and for (vector.data.items) |item, i| {
+                if (!item.equals(other.vector.data.items[i])) break false;
             } else true,
-            .hash_map => |hash_map| hash_map.count() == other.hash_map.count() and blk: {
-                var it = hash_map.iterator();
+            .hash_map => |hash_map| hash_map.data.count() == other.hash_map.data.count() and blk: {
+                var it = hash_map.data.iterator();
                 break :blk while (it.next()) |entry| {
-                    if (other.hash_map.get(entry.key_ptr.*)) |other_item| {
+                    if (other.hash_map.data.get(entry.key_ptr.*)) |other_item| {
                         if (!entry.value_ptr.*.equals(other_item)) break false;
                     } else break false;
                 } else true;
@@ -515,14 +480,14 @@ pub const MalType = union(enum) {
                     if (!std.mem.eql(u8, item, other.closure.parameters.items[i])) break :blk false;
                 } else break :blk true;
             },
-            .primitive => |primitive| @enumToInt(primitive) == @enumToInt(other.primitive) and
-                std.mem.eql(u8, std.mem.asBytes(&primitive), std.mem.asBytes(&other.primitive)),
+            .primitive => |primitive| @enumToInt(primitive.data) == @enumToInt(other.primitive.data) and
+                std.mem.eql(u8, std.mem.asBytes(&primitive.data), std.mem.asBytes(&other.primitive.data)),
             else => &self == other,
         };
         if (self == .list and other.* == .vector) {
-            return MalType.equalsListVector(self.list, other.vector);
+            return MalType.equalsListVector(self.list.data, other.vector.data);
         } else if (self == .vector and other.* == .list) {
-            return MalType.equalsListVector(other.list, self.vector);
+            return MalType.equalsListVector(other.list.data, self.vector.data);
         } else return false;
     }
 
@@ -531,7 +496,7 @@ pub const MalType = union(enum) {
     }
 
     pub fn isListWithFirstSymbol(self: Self, symbol: []const u8) bool {
-        return self == .list and self.list.first != null and self.list.first.?.data.isSymbol(symbol);
+        return self == .list and self.list.data.first != null and self.list.data.first.?.data.isSymbol(symbol);
     }
 
     pub fn isTruthy(self: Self) bool {
@@ -540,14 +505,14 @@ pub const MalType = union(enum) {
 
     pub fn asList(self: Self) !List {
         return switch (self) {
-            .list => |list| list,
+            .list => |list| list.data,
             else => error.NotList,
         };
     }
 
     pub fn asHashMap(self: Self) !HashMap {
         return switch (self) {
-            .hash_map => |hash_map| hash_map,
+            .hash_map => |hash_map| hash_map.data,
             else => error.NotHashMap,
         };
     }
@@ -591,17 +556,74 @@ pub const MalType = union(enum) {
 
     pub fn toSlice(self: Self, allocator: Allocator) !Slice {
         return switch (self) {
-            .list => |list| MalType.sliceFromList(allocator, list),
-            .vector => |vector| vector.items,
+            .list => |list| MalType.sliceFromList(allocator, list.data),
+            .vector => |vector| vector.data.items,
             else => error.NotSeq,
         };
     }
 
     pub fn apply(self: Self, allocator: Allocator, args: Slice) !*MalType {
         return switch (self) {
-            .primitive => |primitive| primitive.apply(allocator, args),
+            .primitive => |primitive| primitive.data.apply(allocator, args),
             .closure => |closure| closure.apply(allocator, args),
             else => error.NotFunction,
         };
+    }
+};
+
+pub const EvalError = error{
+    EvalDefInvalidOperands,
+    EvalDoInvalidOperands,
+    EvalIfInvalidOperands,
+    EvalLetInvalidOperands,
+    EvalQuoteInvalidOperands,
+    EvalQuasiquoteInvalidOperands,
+    EvalQuasiquoteexpandInvalidOperands,
+    EvalUnquoteInvalidOperands,
+    EvalSpliceunquoteInvalidOperands,
+    EvalDefmacroInvalidOperands,
+    EvalMacroexpandInvalidOperands,
+    EvalConsInvalidOperands,
+    EvalConcatInvalidOperands,
+    EvalVecInvalidOperands,
+    EvalNthInvalidOperands,
+    EvalFirstInvalidOperands,
+    EvalRestInvalidOperands,
+    EvalApplyInvalidOperands,
+    EvalMapInvalidOperands,
+    EvalConjInvalidOperands,
+    EvalSeqInvalidOperands,
+    EvalInvalidOperand,
+    EvalInvalidOperands,
+    EvalNotSymbolOrFn,
+    EnvSymbolNotFound,
+    EvalInvalidFnParamsList,
+    EvalIndexOutOfRange,
+    EvalTryInvalidOperands,
+    EvalCatchInvalidOperands,
+    EvalTryNoCatch,
+    MalException,
+    NotImplemented,
+} || Allocator.Error || MalType.Primitive.Error;
+
+pub const Exception = struct {
+    var current_exception: ?*MalType = null;
+
+    pub fn get() ?*MalType {
+        return current_exception;
+    }
+
+    pub fn clear() void {
+        current_exception = null;
+    }
+
+    pub fn throw(value: *MalType, err: EvalError) EvalError {
+        current_exception = value;
+        return err;
+    }
+
+    pub fn throwMessage(allocator: Allocator, message: []const u8, err: EvalError) EvalError {
+        current_exception = try MalType.makeString(allocator, message);
+        return err;
     }
 };
