@@ -8,29 +8,30 @@ const reader = @import("./reader.zig");
 const types = @import("./types.zig");
 const EvalError = types.EvalError;
 const Exception = types.Exception;
-const MalType = types.MalType;
+const MalObject = types.MalObject;
+const Symbol = types.Symbol;
 
 const input_buffer_length = 256;
 const prompt = "user> ";
 
-fn READ(allocator: Allocator, input: []const u8) !*MalType {
+fn READ(allocator: Allocator, input: []const u8) !*MalObject {
     return reader.read_str(allocator, input);
 }
 
-fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
+fn EVAL(allocator: Allocator, ast: *MalObject, env: *Env) EvalError!*MalObject {
     var current_ast = ast;
     var current_env = env;
     while (true) {
         // expand macros
         current_ast = try macroexpand(allocator, current_ast, env);
 
-        switch (current_ast.*) {
+        switch (current_ast.data) {
             .list => |list| {
-                const list_items = try MalType.sliceFromList(allocator, list.data);
-                if (list_items.len == 0) return MalType.makeListEmpty(allocator) else {
+                const list_items = try MalObject.sliceFromList(allocator, list.data);
+                if (list_items.len == 0) return MalObject.makeListEmpty(allocator) else {
                     // apply phase
                     const first = list_items[0];
-                    if (first.* == .symbol) {
+                    if (first.data == .symbol) {
                         if (first.isSymbol("def!")) {
                             const rest = list_items[1..];
                             if (rest.len != 2) return error.EvalDefInvalidOperands;
@@ -70,14 +71,14 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                             else if (rest.len == 3)
                                 current_ast = rest[2]
                             else
-                                current_ast = try MalType.makeNil(allocator);
+                                current_ast = try MalObject.makeNil(allocator);
                             continue;
                         }
 
                         if (first.isSymbol("do")) {
                             const do_len = list_items.len - 1;
                             if (do_len < 1) return error.EvalDoInvalidOperands;
-                            const do_ast = try MalType.makeList(allocator, list_items[1..do_len]);
+                            const do_ast = try MalObject.makeList(allocator, list_items[1..do_len]);
                             _ = try eval_ast(allocator, do_ast, current_env);
                             current_ast = list_items[do_len];
                             continue;
@@ -85,13 +86,13 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
 
                         if (first.isSymbol("fn*")) {
                             const parameters = list_items[1].toSlice(allocator) catch return error.EvalInvalidFnParamsList;
-                            // convert from a list of MalType to a list of valid symbol keys to use in environment init
-                            var binds = try std.ArrayList(MalType.Symbol).initCapacity(allocator, parameters.len);
+                            // convert from a list of *MalObject to a list of valid symbol keys to use in environment init
+                            var binds = try std.ArrayList(Symbol).initCapacity(allocator, parameters.len);
                             for (parameters) |parameter| {
                                 const parameter_symbol = parameter.asSymbol() catch return error.EvalInvalidFnParamsList;
                                 binds.appendAssumeCapacity(parameter_symbol);
                             }
-                            return MalType.makeClosure(allocator, .{
+                            return MalObject.makeClosure(allocator, .{
                                 .parameters = binds,
                                 .body = list_items[2],
                                 .env = current_env,
@@ -125,8 +126,8 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
 
                             const evaled_value = try EVAL(allocator, rest[1], current_env);
                             // make a copy to avoid mutating existing functions
-                            var macro = try MalType.make(allocator, evaled_value.*);
-                            macro.closure.is_macro = true;
+                            var macro = try MalObject.make(allocator, evaled_value.data);
+                            macro.data.closure.is_macro = true;
                             try current_env.set(key_symbol, macro);
                             return macro;
                         }
@@ -142,12 +143,12 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                             return EVAL(allocator, rest[0], current_env) catch {
                                 if (rest.len != 2) return error.EvalTryInvalidOperands;
                                 const catch_list = try rest[1].asList();
-                                const catch_list_items = try MalType.sliceFromList(allocator, catch_list);
+                                const catch_list_items = try MalObject.sliceFromList(allocator, catch_list);
                                 if (catch_list_items.len != 3) return error.EvalCatchInvalidOperands;
                                 if (!catch_list_items[0].isSymbol("catch*")) return error.EvalTryNoCatch;
                                 const catch_symbol = try catch_list_items[1].asSymbol();
                                 var catch_env = try current_env.initChild();
-                                try catch_env.set(catch_symbol, Exception.get() orelse try MalType.makeNil(allocator));
+                                try catch_env.set(catch_symbol, Exception.get() orelse try MalObject.makeNil(allocator));
                                 const result = try EVAL(allocator, catch_list_items[2], catch_env);
                                 // reset global exception if it has been handled
                                 Exception.clear();
@@ -165,7 +166,7 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
                     const function = evaled_items[0];
                     const args = evaled_items[1..];
 
-                    switch (function.*) {
+                    switch (function.data) {
                         .primitive => |primitive| return primitive.data.apply(allocator, args),
                         .closure => |closure| {
                             const parameters = closure.parameters.items;
@@ -186,43 +187,43 @@ fn EVAL(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
     }
 }
 
-fn eval_ast(allocator: Allocator, ast: *MalType, env: *Env) EvalError!*MalType {
-    switch (ast.*) {
+fn eval_ast(allocator: Allocator, ast: *MalObject, env: *Env) EvalError!*MalObject {
+    switch (ast.data) {
         .symbol => |symbol| return env.get(symbol) catch |err| {
             return Exception.throwMessage(allocator, try std.fmt.allocPrint(allocator, "'{s}' not found", .{symbol}), err);
         },
         .list => |list| {
-            var results = try std.ArrayList(*MalType).initCapacity(allocator, list.data.len());
+            var results = try std.ArrayList(*MalObject).initCapacity(allocator, list.data.len());
             var it = list.data.first;
             while (it) |node| : (it = node.next) {
                 const result = try EVAL(allocator, node.data, env);
                 results.appendAssumeCapacity(result);
             }
-            return MalType.makeList(allocator, results.items);
+            return MalObject.makeList(allocator, results.items);
         },
         .vector => |vector| {
-            var results = try std.ArrayList(*MalType).initCapacity(allocator, vector.data.items.len);
+            var results = try std.ArrayList(*MalObject).initCapacity(allocator, vector.data.items.len);
             for (vector.data.items) |item| {
                 const result = try EVAL(allocator, item, env);
                 results.appendAssumeCapacity(result);
             }
-            return MalType.makeVector(allocator, results);
+            return MalObject.makeVector(allocator, results);
         },
         .hash_map => |hash_map| {
-            var results = try std.ArrayList(*MalType).initCapacity(allocator, 2 * hash_map.data.count());
+            var results = try std.ArrayList(*MalObject).initCapacity(allocator, 2 * hash_map.data.count());
             var it = hash_map.data.iterator();
             while (it.next()) |entry| {
-                results.appendAssumeCapacity(try MalType.makeKey(allocator, entry.key_ptr.*));
+                results.appendAssumeCapacity(try MalObject.makeKey(allocator, entry.key_ptr.*));
                 const result = try EVAL(allocator, entry.value_ptr.*, env);
                 results.appendAssumeCapacity(result);
             }
-            return MalType.makeHashMap(allocator, results.items);
+            return MalObject.makeHashMap(allocator, results.items);
         },
         else => return ast,
     }
 }
 
-fn PRINT(allocator: Allocator, ast: *const MalType) ![]const u8 {
+fn PRINT(allocator: Allocator, ast: *const MalObject) ![]const u8 {
     const output = try printer.pr_str(allocator, ast, true);
     return output;
 }
@@ -236,74 +237,74 @@ fn rep(allocator: Allocator, input: []const u8, env: *Env) ![]const u8 {
 
 var repl_env: Env = undefined;
 
-fn eval(allocator: Allocator, ast: *MalType) EvalError!*MalType {
+fn eval(allocator: Allocator, ast: *MalObject) EvalError!*MalObject {
     return EVAL(allocator, ast, &repl_env);
 }
 
-fn quasiquote(allocator: Allocator, ast: *MalType) EvalError!*MalType {
-    switch (ast.*) {
+fn quasiquote(allocator: Allocator, ast: *MalObject) EvalError!*MalObject {
+    switch (ast.data) {
         .list => |list| {
-            const list_items = try MalType.sliceFromList(allocator, list.data);
+            const list_items = try MalObject.sliceFromList(allocator, list.data);
             if (list_items.len > 0 and list_items[0].isSymbol("unquote")) {
                 if (list_items.len < 2) return error.EvalUnquoteInvalidOperands;
                 return list_items[1];
             }
-            var result = try MalType.makeListEmpty(allocator);
+            var result = try MalObject.makeListEmpty(allocator);
             var i = list_items.len;
             while (i > 0) {
                 i -= 1;
                 const element = list_items[i];
                 if (element.isListWithFirstSymbol("splice-unquote")) {
-                    if (element.list.data.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
-                    const concat = try MalType.makeSymbol(allocator, "concat");
-                    result = try MalType.makeList(allocator, &.{ concat, element.list.data.first.?.next.?.data, result });
+                    if (element.data.list.data.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
+                    const concat = try MalObject.makeSymbol(allocator, "concat");
+                    result = try MalObject.makeList(allocator, &.{ concat, element.data.list.data.first.?.next.?.data, result });
                 } else {
-                    const cons = try MalType.makeSymbol(allocator, "cons");
-                    result = try MalType.makeList(allocator, &.{ cons, try quasiquote(allocator, element), result });
+                    const cons = try MalObject.makeSymbol(allocator, "cons");
+                    result = try MalObject.makeList(allocator, &.{ cons, try quasiquote(allocator, element), result });
                 }
             }
             return result;
         },
         .vector => |vector| {
-            var result = try MalType.makeListEmpty(allocator);
+            var result = try MalObject.makeListEmpty(allocator);
             var i = vector.data.items.len;
             while (i > 0) {
                 i -= 1;
                 const element = vector.data.items[i];
                 if (element.isListWithFirstSymbol("splice-unquote")) {
-                    if (element.list.data.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
-                    const concat = try MalType.makeSymbol(allocator, "concat");
-                    result = try MalType.makeList(allocator, &.{ concat, element.list.data.first.?.next.?.data, result });
+                    if (element.data.list.data.first.?.next == null) return error.EvalSpliceunquoteInvalidOperands;
+                    const concat = try MalObject.makeSymbol(allocator, "concat");
+                    result = try MalObject.makeList(allocator, &.{ concat, element.data.list.data.first.?.next.?.data, result });
                 } else {
-                    const cons = try MalType.makeSymbol(allocator, "cons");
-                    result = try MalType.makeList(allocator, &.{ cons, try quasiquote(allocator, element), result });
+                    const cons = try MalObject.makeSymbol(allocator, "cons");
+                    result = try MalObject.makeList(allocator, &.{ cons, try quasiquote(allocator, element), result });
                 }
             }
-            const vec = try MalType.makeSymbol(allocator, "vec");
-            return MalType.makeList(allocator, &.{ vec, result });
+            const vec = try MalObject.makeSymbol(allocator, "vec");
+            return MalObject.makeList(allocator, &.{ vec, result });
         },
         .symbol, .hash_map => {
-            const quote = try MalType.makeSymbol(allocator, "quote");
-            return MalType.makeList(allocator, &.{ quote, ast });
+            const quote = try MalObject.makeSymbol(allocator, "quote");
+            return MalObject.makeList(allocator, &.{ quote, ast });
         },
         else => return ast,
     }
 }
 
-fn is_macro_call(ast: *MalType, env: *Env) bool {
-    if (ast.* == .list and ast.list.data.first != null and ast.list.data.first.?.data.* == .symbol) {
-        const symbol = ast.list.data.first.?.data.symbol;
+fn is_macro_call(ast: *MalObject, env: *Env) bool {
+    if (ast.data == .list and ast.data.list.data.first != null and ast.data.list.data.first.?.data.data == .symbol) {
+        const symbol = ast.data.list.data.first.?.data.data.symbol;
         if (env.get(symbol)) |value| {
-            return value.* == .closure and value.closure.is_macro;
+            return value.data == .closure and value.data.closure.is_macro;
         } else |_| {}
     }
     return false;
 }
 
-fn macroexpand(allocator: Allocator, ast: *MalType, env: *Env) !*MalType {
+fn macroexpand(allocator: Allocator, ast: *MalObject, env: *Env) !*MalObject {
     var current_ast = ast;
     while (is_macro_call(current_ast, env)) {
-        const macro = try env.get(current_ast.list.data.first.?.data.symbol);
+        const macro = try env.get(current_ast.data.list.data.first.?.data.data.symbol);
         current_ast = try macro.apply(allocator, (try current_ast.toSlice(allocator))[1..]);
     }
     return current_ast;
@@ -324,10 +325,10 @@ pub fn main() anyerror!void {
     defer repl_env.deinit();
 
     inline for (@typeInfo(@TypeOf(core.ns)).Struct.fields) |field| {
-        try repl_env.set(field.name, try MalType.makePrimitive(allocator, @field(core.ns, field.name)));
+        try repl_env.set(field.name, try MalObject.makePrimitive(allocator, @field(core.ns, field.name)));
     }
 
-    try repl_env.set("eval", try MalType.makePrimitive(allocator, eval));
+    try repl_env.set("eval", try MalObject.makePrimitive(allocator, eval));
 
     var input_buffer: [input_buffer_length]u8 = undefined;
     // initialize std io reader and writer
@@ -349,14 +350,14 @@ pub fn main() anyerror!void {
     const opt_filename = iter.next();
 
     // read rest of CLI arguments into the *ARGV* list
-    var argv = std.ArrayList(*MalType).init(allocator);
+    var argv = std.ArrayList(*MalObject).init(allocator);
     while (iter.next()) |arg| {
-        try argv.append(try MalType.makeString(allocator, arg));
+        try argv.append(try MalObject.makeString(allocator, arg));
     }
-    try repl_env.set("*ARGV*", try MalType.makeList(allocator, argv.items));
+    try repl_env.set("*ARGV*", try MalObject.makeList(allocator, argv.items));
 
     const host_language = "mal-zig";
-    try repl_env.set("*host-language*", try MalType.makeString(allocator, host_language));
+    try repl_env.set("*host-language*", try MalObject.makeString(allocator, host_language));
 
     // call (load-file filename) if given a filename argument
     if (opt_filename) |filename| {

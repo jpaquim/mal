@@ -2,13 +2,14 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const types = @import("./types.zig");
-const MalType = types.MalType;
+const MalObject = types.MalObject;
+const Slice = types.Slice;
 const replaceMultipleOwned = @import("./utils.zig").replaceMultipleOwned;
 
 const Error = error{OutOfMemory};
 
-pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool) Error![]const u8 {
-    return switch (value.*) {
+pub fn pr_str(allocator: Allocator, value: *const MalObject, print_readably: bool) Error![]const u8 {
+    return switch (value.data) {
         .closure => |closure| {
             var result = std.ArrayList(u8).init(allocator);
             const writer = result.writer();
@@ -40,9 +41,9 @@ pub fn pr_str(allocator: Allocator, value: *const MalType, print_readably: bool)
         .keyword => |keyword| try std.fmt.allocPrint(allocator, ":{s}", .{keyword[2..]}),
         .string => |string| if (print_readably) try std.fmt.allocPrint(allocator, "\"{s}\"", .{replaceWithEscapeSequences(allocator, string)}) else string,
         .symbol => |symbol| symbol,
-        .list => |list| try printJoinDelims(allocator, "(", ")", try MalType.sliceFromList(allocator, list.data), print_readably),
+        .list => |list| try printJoinDelims(allocator, "(", ")", try MalObject.sliceFromList(allocator, list.data), print_readably),
         .vector => |vector| try printJoinDelims(allocator, "[", "]", vector.data.items, print_readably),
-        .hash_map => |hash_map| try printJoinDelims(allocator, "{", "}", try MalType.sliceFromHashMap(allocator, hash_map.data), print_readably),
+        .hash_map => |hash_map| try printJoinDelims(allocator, "{", "}", try MalObject.sliceFromHashMap(allocator, hash_map.data), print_readably),
     };
 }
 
@@ -55,7 +56,7 @@ fn replaceWithEscapeSequences(allocator: Allocator, str: []const u8) ![]const u8
     return replaceMultipleOwned(u8, 3, allocator, str, needles, replacements);
 }
 
-pub fn printJoin(allocator: Allocator, separator: []const u8, args: MalType.Slice, print_readably: bool) ![]const u8 {
+pub fn printJoin(allocator: Allocator, separator: []const u8, args: Slice, print_readably: bool) ![]const u8 {
     var printed_args = try std.ArrayList([]const u8).initCapacity(allocator, args.len);
     defer printed_args.deinit();
     for (args) |arg| {
@@ -64,7 +65,7 @@ pub fn printJoin(allocator: Allocator, separator: []const u8, args: MalType.Slic
     return std.mem.join(allocator, separator, printed_args.items);
 }
 
-pub fn printJoinDelims(allocator: Allocator, delimiter_start: []const u8, delimiter_end: []const u8, args: MalType.Slice, print_readably: bool) ![]const u8 {
+pub fn printJoinDelims(allocator: Allocator, delimiter_start: []const u8, delimiter_end: []const u8, args: Slice, print_readably: bool) ![]const u8 {
     var printed_forms = std.ArrayList(u8).init(allocator);
     const writer = printed_forms.writer();
 

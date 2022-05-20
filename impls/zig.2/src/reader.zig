@@ -2,7 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const types = @import("./types.zig");
-const MalType = types.MalType;
+const MalObject = types.MalObject;
+const MalValue = types.MalValue;
 const replaceMultipleOwned = @import("./utils.zig").replaceMultipleOwned;
 
 const Token = []const u8;
@@ -47,7 +48,7 @@ pub const ReadError = error{
     TokensPastFormEnd,
 } || Allocator.Error;
 
-pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
+pub fn read_str(allocator: Allocator, input: []const u8) !*MalObject {
     // tokenize input string into token list
     const tokens = try tokenize(allocator, input);
     // check if there are no tokens in which case we throw a special error to
@@ -73,13 +74,13 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     return form;
 }
 
-fn readerMacro(allocator: Allocator, reader: *Reader, symbol: []const u8) !*MalType {
-    const prefix = try MalType.makeSymbol(allocator, symbol);
+fn readerMacro(allocator: Allocator, reader: *Reader, symbol: []const u8) !*MalObject {
+    const prefix = try MalObject.makeSymbol(allocator, symbol);
     const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-    return MalType.makeList(allocator, &.{ prefix, form });
+    return MalObject.makeList(allocator, &.{ prefix, form });
 }
 
-fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
+fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalObject {
     while (true) {
         if (reader.peek()) |token|
             switch (token[0]) {
@@ -120,10 +121,10 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
                 // ^metadata form => (with-meta form metadata)
                 '^' => {
                     _ = reader.next();
-                    const prefix = try MalType.makeSymbol(allocator, "with-meta");
+                    const prefix = try MalObject.makeSymbol(allocator, "with-meta");
                     const metadata_form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
                     const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                    return MalType.makeList(allocator, &.{ prefix, form, metadata_form });
+                    return MalObject.makeList(allocator, &.{ prefix, form, metadata_form });
                 },
                 else => return read_atom(allocator, reader),
             }
@@ -138,10 +139,10 @@ const ListType = enum {
     hash_map,
 };
 
-fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalType {
+fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalObject {
     // skip over the first '(', '[', '{' token in the list
     _ = reader.next();
-    var list = std.ArrayList(*MalType).init(allocator);
+    var list = std.ArrayList(*MalObject).init(allocator);
     // read the next forms until a matching ')', ']', '}' is found, or error otherwise
     var err_form = read_form(allocator, reader);
     while (err_form) |opt_form| : (err_form = read_form(allocator, reader)) {
@@ -157,13 +158,13 @@ fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalTy
     // skip over the last ')', ']', '}' token in the list
     _ = reader.next();
     switch (list_type) {
-        .list => return MalType.makeList(allocator, list.items),
-        .vector => return MalType.makeVector(allocator, list),
-        .hash_map => return MalType.makeHashMap(allocator, list.items),
+        .list => return MalObject.makeList(allocator, list.items),
+        .vector => return MalObject.makeVector(allocator, list),
+        .hash_map => return MalObject.makeHashMap(allocator, list.items),
     }
 }
 
-fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
+fn read_atom(allocator: Allocator, reader: *Reader) !*MalObject {
     const result = if (reader.next()) |token|
         if (std.mem.eql(u8, token, "nil"))
             .nil
@@ -171,18 +172,18 @@ fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
             .t
         else if (std.mem.eql(u8, token, "false"))
             .f
-        else if (token[0] == '"') MalType{
+        else if (token[0] == '"') MalValue{
             .string = try replaceEscapeSequences(allocator, token[1 .. token.len - 1]),
-        } else if (token[0] == ':') MalType{
-            .keyword = try MalType.addKeywordPrefix(allocator, token[1..]),
-        } else if (std.fmt.parseInt(i64, token, 10)) |int| MalType{
+        } else if (token[0] == ':') MalValue{
+            .keyword = try MalValue.addKeywordPrefix(allocator, token[1..]),
+        } else if (std.fmt.parseInt(i64, token, 10)) |int| MalValue{
             .number = int,
-        } else |_| MalType{
+        } else |_| MalValue{
             .symbol = try allocator.dupe(u8, token),
         }
     else
         return error.EndOfInput;
-    return MalType.make(allocator, result);
+    return MalObject.make(allocator, result);
 }
 
 fn replaceEscapeSequences(allocator: Allocator, str: []const u8) ![]const u8 {

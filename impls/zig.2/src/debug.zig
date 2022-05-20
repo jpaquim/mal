@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const Env = @import("./env.zig").Env;
 const printer = @import("./printer.zig");
-const MalType = @import("./types.zig").MalType;
+const MalObject = @import("./types.zig").MalObject;
 
 pub fn println(str: []const u8) void {
     std.debug.print("{s}\n", .{str});
@@ -13,7 +13,7 @@ pub fn print_ptr(str: []const u8, ptr: anytype) void {
     std.debug.print("{s} {*}\n", .{ str, ptr });
 }
 
-pub fn print_ast(a: Allocator, ast: *const MalType) void {
+pub fn print_ast(a: Allocator, ast: *const MalObject) void {
     std.debug.print("ast: {s}\n", .{printer.pr_str(a, ast, true)});
 }
 
