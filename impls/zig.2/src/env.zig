@@ -1,7 +1,8 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 
-const MalObject = @import("./types.zig").MalObject;
+const types = @import("./types.zig");
+const MalObject = types.MalObject;
+const VM = types.VM;
 
 pub const Data = std.StringHashMap(*MalObject);
 
@@ -9,28 +10,30 @@ pub const Env = struct {
     outer: ?*const Env,
     data: Data,
     children: std.ArrayList(*Env),
+    vm: *VM,
 
-    pub fn init(allocator: Allocator, outer: ?*const Env) Env {
+    pub fn init(vm: *VM, outer: ?*const Env) Env {
         return .{
             .outer = outer,
-            .data = Data.init(allocator),
-            .children = std.ArrayList(*Env).init(allocator),
+            .data = Data.init(vm.allocator),
+            .children = std.ArrayList(*Env).init(vm.allocator),
+            .vm = vm,
         };
     }
 
-    pub fn initCapacity(allocator: Allocator, outer: ?*const Env, size: u32) !Env {
-        var self = Env.init(allocator, outer);
+    pub fn initCapacity(vm: *VM, outer: ?*const Env, size: u32) !Env {
+        var self = Env.init(vm, outer);
         try self.data.ensureTotalCapacity(size);
         return self;
     }
 
-    pub fn initBindExprs(allocator: Allocator, outer: ?*const Env, binds: []const []const u8, exprs: []*MalObject) !Env {
+    pub fn initBindExprs(vm: *VM, outer: ?*const Env, binds: []const []const u8, exprs: []*MalObject) !Env {
         // std.debug.assert(binds.len == exprs.len);
-        var self = try Env.initCapacity(allocator, outer, @intCast(u32, binds.len));
+        var self = try Env.initCapacity(vm, outer, @intCast(u32, binds.len));
         for (binds) |symbol, i| {
             if (std.mem.eql(u8, symbol, "&")) {
                 const rest_symbol = binds[i + 1];
-                try self.set(rest_symbol, try MalObject.makeList(allocator, exprs[i..]));
+                try self.set(rest_symbol, try vm.makeList(exprs[i..]));
                 break;
             }
             try self.set(symbol, exprs[i]);
@@ -54,17 +57,15 @@ pub const Env = struct {
     }
 
     pub fn initChild(self: *Env) !*Env {
-        const allocator = self.data.allocator;
-        var child_ptr = try allocator.create(Env);
-        child_ptr.* = Env.init(allocator, self);
+        var child_ptr = try self.vm.allocator.create(Env);
+        child_ptr.* = Env.init(self.vm, self);
         try self.children.append(child_ptr);
         return child_ptr;
     }
 
     pub fn initChildBindExprs(self: *Env, binds: []const []const u8, exprs: []*MalObject) !*Env {
-        const allocator = self.data.allocator;
-        var child_ptr = try allocator.create(Env);
-        child_ptr.* = try Env.initBindExprs(allocator, self, binds, exprs);
+        var child_ptr = try self.vm.allocator.create(Env);
+        child_ptr.* = try Env.initBindExprs(self.vm, self, binds, exprs);
         try self.children.append(child_ptr);
         return child_ptr;
     }

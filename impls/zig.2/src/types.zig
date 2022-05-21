@@ -44,7 +44,7 @@ pub const Primitive = union(enum) {
     // zero arity primitives
     op_out_num: fn () Number,
     // unary primitives
-    op_alloc_val_out_val: fn (allocator: Allocator, a: *MalObject) EvalError!*MalObject,
+    op_vm_val_out_val: fn (vm: *VM, a: *MalObject) EvalError!*MalObject,
     op_val_out_val: fn (a: *MalObject) EvalError!*MalObject,
     op_val_out_bool: fn (a: *MalObject) bool,
     op_val_out_num: fn (a: *MalObject) Number,
@@ -54,10 +54,10 @@ pub const Primitive = union(enum) {
     op_val_val_out_bool: fn (a: *MalObject, b: *MalObject) bool,
     op_val_val_out_bool_err: fn (a: *MalObject, b: *MalObject) EvalError!bool,
     op_val_val_out_val: fn (a: *MalObject, b: *MalObject) EvalError!*MalObject,
-    op_alloc_val_val_out_val: fn (allocator: Allocator, a: *MalObject, b: *MalObject) EvalError!*MalObject,
+    op_vm_val_val_out_val: fn (vm: *VM, a: *MalObject, b: *MalObject) EvalError!*MalObject,
     // varargs primitives
-    op_alloc_varargs_out_val: fn (allocator: Allocator, args: Slice) EvalError!*MalObject,
-    op_alloc_val_varargs_out_val: fn (allocator: Allocator, a: *MalObject, args: Slice) EvalError!*MalObject,
+    op_vm_varargs_out_val: fn (vm: *VM, args: Slice) EvalError!*MalObject,
+    op_vm_val_varargs_out_val: fn (vm: *VM, a: *MalObject, args: Slice) EvalError!*MalObject,
 
     pub fn make(fn_ptr: anytype) Primitive {
         const type_info = @typeInfo(@TypeOf(fn_ptr));
@@ -98,61 +98,61 @@ pub const Primitive = union(enum) {
 
                     return .{ .op_val_val_out_val = fn_ptr };
                 }
-                if (a_type == Allocator and b_type == *MalObject) {
-                    return .{ .op_alloc_val_out_val = fn_ptr };
+                if (a_type == *VM and b_type == *MalObject) {
+                    return .{ .op_vm_val_out_val = fn_ptr };
                 }
-                if (a_type == Allocator and b_type == Slice) {
-                    return .{ .op_alloc_varargs_out_val = fn_ptr };
+                if (a_type == *VM and b_type == Slice) {
+                    return .{ .op_vm_varargs_out_val = fn_ptr };
                 }
             },
             3 => {
                 const a_type = args[0].arg_type.?;
                 const b_type = args[1].arg_type.?;
                 const c_type = args[2].arg_type.?;
-                if (a_type == Allocator and b_type == *MalObject and c_type == *MalObject) {
-                    return .{ .op_alloc_val_val_out_val = fn_ptr };
+                if (a_type == *VM and b_type == *MalObject and c_type == *MalObject) {
+                    return .{ .op_vm_val_val_out_val = fn_ptr };
                 }
-                if (a_type == Allocator and b_type == *MalObject and c_type == Slice) {
-                    return .{ .op_alloc_val_varargs_out_val = fn_ptr };
+                if (a_type == *VM and b_type == *MalObject and c_type == Slice) {
+                    return .{ .op_vm_val_varargs_out_val = fn_ptr };
                 }
             },
             else => unreachable,
         }
     }
-    pub fn apply(primitive: Primitive, allocator: Allocator, args: Slice) !*MalObject {
+    pub fn apply(primitive: Primitive, vm: *VM, args: Slice) !*MalObject {
         // TODO: can probably be compile-time generated from function type info
         switch (primitive) {
             .op_num_num_out_num => |op| {
                 if (args.len != 2) return error.EvalInvalidOperands;
                 const a = args[0].asNumber() catch return error.EvalInvalidOperand;
                 const b = args[1].asNumber() catch return error.EvalInvalidOperand;
-                return MalObject.makeNumber(allocator, op(a, b));
+                return vm.makeNumber(op(a, b));
             },
             .op_num_num_out_bool => |op| {
                 if (args.len != 2) return error.EvalInvalidOperands;
                 const a = args[0].asNumber() catch return error.EvalInvalidOperand;
                 const b = args[1].asNumber() catch return error.EvalInvalidOperand;
-                return MalObject.makeBool(allocator, op(a, b));
+                return vm.makeBool(op(a, b));
             },
             .op_val_out_bool => |op| {
                 if (args.len != 1) return error.EvalInvalidOperands;
-                return MalObject.makeBool(allocator, op(args[0]));
+                return vm.makeBool(op(args[0]));
             },
             .op_out_num => |op| {
                 if (args.len != 0) return error.EvalInvalidOperands;
-                return MalObject.makeNumber(allocator, op());
+                return vm.makeNumber(op());
             },
             .op_val_out_num => |op| {
                 if (args.len != 1) return error.EvalInvalidOperands;
-                return MalObject.makeNumber(allocator, op(args[0]));
+                return vm.makeNumber(op(args[0]));
             },
             .op_val_val_out_bool => |op| {
                 if (args.len != 2) return error.EvalInvalidOperands;
-                return MalObject.makeBool(allocator, op(args[0], args[1]));
+                return vm.makeBool(op(args[0], args[1]));
             },
             .op_val_val_out_bool_err => |op| {
                 if (args.len != 2) return error.EvalInvalidOperands;
-                return MalObject.makeBool(allocator, try op(args[0], args[1]));
+                return vm.makeBool(try op(args[0], args[1]));
             },
             .op_val_out_val => |op| {
                 if (args.len != 1) return error.EvalInvalidOperands;
@@ -162,20 +162,20 @@ pub const Primitive = union(enum) {
                 if (args.len != 2) return error.EvalInvalidOperands;
                 return op(args[0], args[1]);
             },
-            .op_alloc_val_out_val => |op| {
+            .op_vm_val_out_val => |op| {
                 if (args.len != 1) return error.EvalInvalidOperands;
-                return op(allocator, args[0]);
+                return op(vm, args[0]);
             },
-            .op_alloc_val_val_out_val => |op| {
+            .op_vm_val_val_out_val => |op| {
                 if (args.len != 2) return error.EvalInvalidOperands;
-                return op(allocator, args[0], args[1]);
+                return op(vm, args[0], args[1]);
             },
-            .op_alloc_varargs_out_val => |op| {
-                return op(allocator, args);
+            .op_vm_varargs_out_val => |op| {
+                return op(vm, args);
             },
-            .op_alloc_val_varargs_out_val => |op| {
+            .op_vm_val_varargs_out_val => |op| {
                 if (args.len < 2) return error.EvalInvalidOperands;
-                return op(allocator, args[0], args[1..]);
+                return op(vm, args[0], args[1..]);
             },
         }
     }
@@ -189,23 +189,23 @@ pub const Closure = struct {
     parameters: Parameters,
     body: *MalObject,
     env: *Env,
-    eval: fn (allocator: Allocator, ast: *MalObject, env: *Env) EvalError!*MalObject,
+    eval: fn (vm: *VM, ast: *MalObject, env: *Env) EvalError!*MalObject,
     is_macro: bool = false,
 
     metadata: ?Metadata = null,
 
-    pub fn apply(closure: Closure, allocator: Allocator, args: []*MalObject) !*MalObject {
+    pub fn apply(closure: Closure, vm: *VM, args: []*MalObject) !*MalObject {
         const parameters = closure.parameters.items;
         // if (parameters.len != args.len) {
         //     return error.EvalInvalidOperands;
         // }
         // convert from a list of Symbol to a list of valid symbol keys to use in environment init
-        var binds = try std.ArrayList([]const u8).initCapacity(allocator, parameters.len);
+        var binds = try std.ArrayList([]const u8).initCapacity(vm.allocator, parameters.len);
         for (parameters) |parameter| {
             binds.appendAssumeCapacity(parameter);
         }
         var fn_env_ptr = try closure.env.initChildBindExprs(binds.items, args);
-        return closure.eval(allocator, closure.body, fn_env_ptr);
+        return closure.eval(vm, closure.body, fn_env_ptr);
     }
 };
 
@@ -249,143 +249,8 @@ pub const MalValue = union(enum) {
 
 pub const MalObject = struct {
     data: MalValue,
-
-    pub fn make(allocator: Allocator, value: MalValue) !*MalObject {
-        var ptr = try allocator.create(MalObject);
-        ptr.data = value;
-        return ptr;
-    }
-
-    pub fn makeBool(allocator: Allocator, b: bool) !*MalObject {
-        return make(allocator, if (b) .t else .f);
-    }
-
-    pub fn makeNumber(allocator: Allocator, num: Number) !*MalObject {
-        return make(allocator, .{ .number = num });
-    }
-
-    pub fn makeKeyword(allocator: Allocator, keyword: []const u8) !*MalObject {
-        return make(allocator, .{ .keyword = keyword });
-    }
-
-    pub fn makeString(allocator: Allocator, string: []const u8) !*MalObject {
-        return make(allocator, .{ .string = string });
-    }
-
-    pub fn makeSymbol(allocator: Allocator, symbol: []const u8) !*MalObject {
-        return make(allocator, .{ .symbol = symbol });
-    }
-
-    pub fn makeAtom(allocator: Allocator, value: *MalObject) !*MalObject {
-        return make(allocator, .{ .atom = value });
-    }
-
-    pub fn makeListNode(allocator: Allocator, data: *MalObject) !*List.Node {
-        var ptr = try allocator.create(List.Node);
-        ptr.* = .{ .data = data, .next = null };
-        return ptr;
-    }
-
-    pub fn makeListEmpty(allocator: Allocator) !*MalObject {
-        return make(allocator, .{ .list = .{ .data = .{ .first = null } } });
-    }
-
-    pub fn makeListFromNode(allocator: Allocator, node: ?*List.Node) !*MalObject {
-        return make(allocator, .{ .list = .{ .data = .{ .first = node } } });
-    }
-
-    pub fn makeList(allocator: Allocator, slice: []*MalObject) !*MalObject {
-        return make(allocator, .{ .list = .{ .data = try listFromSlice(allocator, slice) } });
-    }
-
-    pub fn makeListPrependSlice(allocator: Allocator, list: List, slice: Slice) !*MalObject {
-        var result_list = list;
-        for (slice) |item| {
-            result_list.prepend(try MalObject.makeListNode(allocator, item));
-        }
-        return make(allocator, .{ .list = .{ .data = result_list } });
-    }
-
-    pub fn listFromSlice(allocator: Allocator, slice: Slice) !List {
-        var list = List{ .first = null };
-        var i = slice.len;
-        while (i > 0) {
-            i -= 1;
-            list.prepend(try makeListNode(allocator, slice[i]));
-        }
-        return list;
-    }
-
-    pub fn arrayListFromList(allocator: Allocator, list: List) !std.ArrayList(*MalObject) {
-        var result = std.ArrayList(*MalObject).init(allocator);
-        var it = list.first;
-        while (it) |node| : (it = node.next) {
-            try result.append(node.data);
-        }
-        return result;
-    }
-
-    pub fn sliceFromList(allocator: Allocator, list: List) !Slice {
-        return (try arrayListFromList(allocator, list)).items;
-    }
-
-    pub fn makeVector(allocator: Allocator, vector: Vector) !*MalObject {
-        return make(allocator, .{ .vector = .{ .data = vector } });
-    }
-
-    pub fn makeVectorEmpty(allocator: Allocator) !*MalObject {
-        return make(allocator, .{ .vector = .{ .data = Vector.init(allocator) } });
-    }
-
-    pub fn makeVectorCapacity(allocator: Allocator, num: usize) !*MalObject {
-        return make(allocator, .{ .vector = .{ .data = try Vector.initCapacity(allocator, num) } });
-    }
-
-    pub fn makeVectorFromSlice(allocator: Allocator, slice: []*MalObject) !*MalObject {
-        var vector = try Vector.initCapacity(allocator, slice.len);
-        for (slice) |item| {
-            vector.appendAssumeCapacity(item);
-        }
-        return makeVector(allocator, vector);
-    }
-
-    pub fn makeHashMap(allocator: Allocator, slice: Slice) !*MalObject {
-        var hash_map = HashMap.init(allocator);
-        try hash_map.ensureTotalCapacity(@intCast(u32, slice.len / 2));
-        var i: usize = 0;
-        while (i + 1 < slice.len) : (i += 2) {
-            const key = try slice[i].asKey();
-            const value = slice[i + 1];
-            hash_map.putAssumeCapacity(key, value);
-        }
-        return make(allocator, .{ .hash_map = .{ .data = hash_map } });
-    }
-
-    pub fn sliceFromHashMap(allocator: Allocator, hash_map: HashMap) !Slice {
-        var list = try std.ArrayList(*MalObject).initCapacity(allocator, hash_map.count() * 2);
-        var it = hash_map.iterator();
-        while (it.next()) |entry| {
-            list.appendAssumeCapacity(try MalObject.makeKey(allocator, entry.key_ptr.*));
-            list.appendAssumeCapacity(entry.value_ptr.*);
-        }
-        return list.items;
-    }
-
-    pub fn makeNil(allocator: Allocator) !*MalObject {
-        return make(allocator, .nil);
-    }
-
-    pub fn makePrimitive(allocator: Allocator, primitive: anytype) !*MalObject {
-        return make(allocator, .{ .primitive = .{ .data = Primitive.make(primitive) } });
-    }
-
-    pub fn makeClosure(allocator: Allocator, closure: Closure) !*MalObject {
-        return make(allocator, .{ .closure = closure });
-    }
-
-    pub fn makeKey(allocator: Allocator, string: Str) !*MalObject {
-        if (string.len > 2 and std.mem.eql(u8, string[0..2], "ʞ")) return makeKeyword(allocator, string) else return makeString(allocator, string);
-    }
+    marked: bool,
+    next: ?*MalObject,
 
     const Self = @This();
 
@@ -503,18 +368,18 @@ pub const MalObject = struct {
         return result;
     }
 
-    pub fn toSlice(self: Self, allocator: Allocator) !Slice {
+    pub fn toSlice(self: Self, vm: *VM) !Slice {
         return switch (self.data) {
-            .list => |list| MalObject.sliceFromList(allocator, list.data),
+            .list => |list| vm.sliceFromList(list.data),
             .vector => |vector| vector.data.items,
             else => error.NotSeq,
         };
     }
 
-    pub fn apply(self: Self, allocator: Allocator, args: Slice) !*MalObject {
+    pub fn apply(self: Self, vm: *VM, args: Slice) !*MalObject {
         return switch (self.data) {
-            .primitive => |primitive| primitive.data.apply(allocator, args),
-            .closure => |closure| closure.apply(allocator, args),
+            .primitive => |primitive| primitive.data.apply(vm, args),
+            .closure => |closure| closure.apply(vm, args),
             else => error.NotFunction,
         };
     }
@@ -547,6 +412,205 @@ pub const MalObject = struct {
         if (self.marked) return;
 
         self.marked = true;
+
+        // TODO: mark child collection items, metadata references, and atom refs
+    }
+};
+
+pub const VM = struct {
+    const stack_max = 256;
+    const init_obj_num_max = 8;
+
+    allocator: Allocator,
+    stack: [stack_max]*MalObject = undefined,
+    stack_size: i32 = 0,
+    first_object: ?*MalObject = null,
+    num_objects: i32 = 0,
+    max_objects: i32 = init_obj_num_max,
+
+    pub fn init(allocator: Allocator) VM {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn deinit(vm: *VM) void {
+        vm.gc();
+    }
+
+    pub fn gc(vm: *VM) void {
+        const num_objects = vm.num_objects;
+
+        vm.markAll();
+        vm.sweep();
+
+        vm.max_objects = vm.num_objects * 2;
+
+        std.debug.print("Collected {} objects, {} remaining\n", .{ num_objects - vm.num_objects, vm.num_objects });
+    }
+
+    pub fn markAll(vm: *VM) void {
+        var index: usize = 0;
+        while (index < vm.stack_size) : (index += 1) {
+            vm.stack[index].mark();
+        }
+    }
+
+    pub fn sweep(vm: *VM) void {
+        var object_ptr = &vm.first_object;
+        while (object_ptr.*) |object| {
+            if (!object.marked) {
+                object_ptr.* = object.next;
+                vm.allocator.destroy(object);
+                vm.num_objects -= 1;
+            } else {
+                object.marked = false;
+                object_ptr = &object.next;
+            }
+        }
+    }
+
+    pub fn make(vm: *VM, value: MalValue) !*MalObject {
+        // if (vm.num_objects == vm.max_objects) vm.gc();
+
+        var object = try vm.allocator.create(MalObject);
+        object.* = .{
+            .data = value,
+            .marked = false,
+            .next = vm.first_object,
+        };
+        vm.first_object = object;
+        vm.num_objects += 1;
+        return object;
+    }
+
+    pub fn makeBool(vm: *VM, b: bool) !*MalObject {
+        return vm.make(if (b) .t else .f);
+    }
+
+    pub fn makeNumber(vm: *VM, num: Number) !*MalObject {
+        return vm.make(.{ .number = num });
+    }
+
+    pub fn makeKeyword(vm: *VM, keyword: []const u8) !*MalObject {
+        return vm.make(.{ .keyword = keyword });
+    }
+
+    pub fn makeString(vm: *VM, string: []const u8) !*MalObject {
+        return vm.make(.{ .string = string });
+    }
+
+    pub fn makeSymbol(vm: *VM, symbol: []const u8) !*MalObject {
+        return vm.make(.{ .symbol = symbol });
+    }
+
+    pub fn makeAtom(vm: *VM, value: *MalObject) !*MalObject {
+        return vm.make(.{ .atom = value });
+    }
+
+    pub fn makeListNode(vm: *VM, data: *MalObject) !*List.Node {
+        var ptr = try vm.allocator.create(List.Node);
+        ptr.* = .{ .data = data, .next = null };
+        return ptr;
+    }
+
+    pub fn makeListEmpty(vm: *VM) !*MalObject {
+        return vm.make(.{ .list = .{ .data = .{ .first = null } } });
+    }
+
+    pub fn makeListFromNode(vm: *VM, node: ?*List.Node) !*MalObject {
+        return vm.make(.{ .list = .{ .data = .{ .first = node } } });
+    }
+
+    pub fn makeList(vm: *VM, slice: []*MalObject) !*MalObject {
+        return vm.make(.{ .list = .{ .data = try vm.listFromSlice(slice) } });
+    }
+
+    pub fn makeListPrependSlice(vm: *VM, list: List, slice: Slice) !*MalObject {
+        var result_list = list;
+        for (slice) |item| {
+            result_list.prepend(try vm.makeListNode(item));
+        }
+        return vm.make(.{ .list = .{ .data = result_list } });
+    }
+
+    pub fn listFromSlice(vm: *VM, slice: Slice) !List {
+        var list = List{ .first = null };
+        var i = slice.len;
+        while (i > 0) {
+            i -= 1;
+            list.prepend(try vm.makeListNode(slice[i]));
+        }
+        return list;
+    }
+
+    pub fn arrayListFromList(vm: *VM, list: List) !std.ArrayList(*MalObject) {
+        var result = std.ArrayList(*MalObject).init(vm.allocator);
+        var it = list.first;
+        while (it) |node| : (it = node.next) {
+            try result.append(node.data);
+        }
+        return result;
+    }
+
+    pub fn sliceFromList(vm: *VM, list: List) !Slice {
+        return (try vm.arrayListFromList(list)).items;
+    }
+
+    pub fn makeVector(vm: *VM, vector: Vector) !*MalObject {
+        return vm.make(.{ .vector = .{ .data = vector } });
+    }
+
+    pub fn makeVectorEmpty(vm: *VM) !*MalObject {
+        return vm.make(.{ .vector = .{ .data = Vector.init(vm.allocator) } });
+    }
+
+    pub fn makeVectorCapacity(vm: *VM, num: usize) !*MalObject {
+        return vm.make(.{ .vector = .{ .data = try Vector.initCapacity(vm.allocator, num) } });
+    }
+
+    pub fn makeVectorFromSlice(vm: *VM, slice: []*MalObject) !*MalObject {
+        var vector = try Vector.initCapacity(vm.allocator, slice.len);
+        for (slice) |item| {
+            vector.appendAssumeCapacity(item);
+        }
+        return vm.makeVector(vector);
+    }
+
+    pub fn makeHashMap(vm: *VM, slice: Slice) !*MalObject {
+        var hash_map = HashMap.init(vm.allocator);
+        try hash_map.ensureTotalCapacity(@intCast(u32, slice.len / 2));
+        var i: usize = 0;
+        while (i + 1 < slice.len) : (i += 2) {
+            const key = try slice[i].asKey();
+            const value = slice[i + 1];
+            hash_map.putAssumeCapacity(key, value);
+        }
+        return vm.make(.{ .hash_map = .{ .data = hash_map } });
+    }
+
+    pub fn sliceFromHashMap(vm: *VM, hash_map: HashMap) !Slice {
+        var list = try std.ArrayList(*MalObject).initCapacity(vm.allocator, hash_map.count() * 2);
+        var it = hash_map.iterator();
+        while (it.next()) |entry| {
+            list.appendAssumeCapacity(try vm.makeKey(entry.key_ptr.*));
+            list.appendAssumeCapacity(entry.value_ptr.*);
+        }
+        return list.items;
+    }
+
+    pub fn makeNil(vm: *VM) !*MalObject {
+        return vm.make(.nil);
+    }
+
+    pub fn makePrimitive(vm: *VM, primitive: anytype) !*MalObject {
+        return vm.make(.{ .primitive = .{ .data = Primitive.make(primitive) } });
+    }
+
+    pub fn makeClosure(vm: *VM, closure: Closure) !*MalObject {
+        return vm.make(.{ .closure = closure });
+    }
+
+    pub fn makeKey(vm: *VM, string: Str) !*MalObject {
+        if (string.len > 2 and std.mem.eql(u8, string[0..2], "ʞ")) return vm.makeKeyword(string) else return vm.makeString(string);
     }
 };
 
@@ -566,8 +630,8 @@ pub const Exception = struct {
         return err;
     }
 
-    pub fn throwMessage(allocator: Allocator, message: []const u8, err: EvalError) EvalError {
-        current_exception = try MalObject.makeString(allocator, message);
+    pub fn throwMessage(vm: *VM, message: []const u8, err: EvalError) EvalError {
+        current_exception = try vm.makeString(message);
         return err;
     }
 };
