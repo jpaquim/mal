@@ -449,22 +449,27 @@ pub const MalObject = struct {
 };
 
 pub const VM = struct {
-    const stack_max = 256;
     const init_obj_num_max = 8;
 
     allocator: Allocator,
-    stack: [stack_max]*MalObject = undefined,
-    stack_size: i32 = 0,
+    envs: std.ArrayList(*Env),
     first_object: ?*MalObject = null,
     num_objects: i32 = 0,
     max_objects: i32 = init_obj_num_max,
 
     pub fn init(allocator: Allocator) VM {
-        return .{ .allocator = allocator };
+        return .{ .allocator = allocator, .envs = std.ArrayList(*Env).init(allocator) };
     }
 
     pub fn deinit(vm: *VM) void {
-        vm.gc();
+        vm.sweep();
+        for (vm.envs.items) |env| {
+            env.deinit();
+        }
+    }
+
+    pub fn addEnv(vm: *VM, env: *Env) !void {
+        try vm.envs.append(env);
     }
 
     pub fn gc(vm: *VM) void {
@@ -479,9 +484,11 @@ pub const VM = struct {
     }
 
     pub fn markAll(vm: *VM) void {
-        var index: usize = 0;
-        while (index < vm.stack_size) : (index += 1) {
-            vm.stack[index].mark();
+        for (vm.envs.items) |env| {
+            var it = env.data.iterator();
+            while (it.next()) |entry| {
+                entry.value_ptr.*.mark();
+            }
         }
     }
 
@@ -493,14 +500,16 @@ pub const VM = struct {
                 vm.allocator.destroy(object);
                 vm.num_objects -= 1;
             } else {
-                object.marked = false;
+                if (object.data != .primitive) {
+                    object.marked = false;
+                }
                 object_ptr = &object.next;
             }
         }
     }
 
     pub fn make(vm: *VM, value: MalValue) !*MalObject {
-        // if (vm.num_objects == vm.max_objects) vm.gc();
+        if (vm.num_objects == vm.max_objects) vm.gc();
 
         var object = try vm.allocator.create(MalObject);
         object.* = .{

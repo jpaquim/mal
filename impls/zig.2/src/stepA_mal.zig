@@ -327,7 +327,7 @@ pub fn main() anyerror!void {
 
     // REPL environment
     repl_env = Env.init(&vm, null);
-    defer repl_env.deinit();
+    try vm.addEnv(&repl_env);
 
     inline for (@typeInfo(@TypeOf(core.ns)).Struct.fields) |field| {
         try repl_env.set(field.name, try vm.makePrimitive(@field(core.ns, field.name)));
