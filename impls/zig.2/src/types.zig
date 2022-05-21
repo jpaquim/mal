@@ -413,7 +413,38 @@ pub const MalObject = struct {
 
         self.marked = true;
 
-        // TODO: mark child collection items, metadata references, and atom refs
+        switch (self.data) {
+            .list => |*list| {
+                var it = list.data.first;
+                while (it) |node| : (it = node.next) node.data.mark();
+                if (list.metadata) |meta| meta.mark();
+            },
+            .vector => |*vector| {
+                for (vector.data.items) |item| item.mark();
+                if (vector.metadata) |meta| meta.mark();
+            },
+            .hash_map => |*hash_map| {
+                var it = hash_map.data.iterator();
+                while (it.next()) |*entry| {
+                    entry.value_ptr.*.mark();
+                    // entry.key_ptr.*.mark();
+                }
+                if (hash_map.metadata) |meta| meta.mark();
+            },
+            .atom => |atom| atom.mark(),
+            .closure => |closure| {
+                closure.body.mark();
+                var it = closure.env.data.iterator();
+                while (it.next()) |*entry| {
+                    entry.value_ptr.*.mark();
+                }
+                if (closure.metadata) |meta| meta.mark();
+            },
+            .primitive => |primitive| {
+                if (primitive.metadata) |meta| meta.mark();
+            },
+            else => {},
+        }
     }
 };
 
@@ -442,7 +473,7 @@ pub const VM = struct {
         vm.markAll();
         vm.sweep();
 
-        vm.max_objects = vm.num_objects * 2;
+        vm.max_objects = if (vm.num_objects == 0) init_obj_num_max else vm.num_objects * 2;
 
         std.debug.print("Collected {} objects, {} remaining\n", .{ num_objects - vm.num_objects, vm.num_objects });
     }
