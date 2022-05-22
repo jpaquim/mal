@@ -321,13 +321,13 @@ pub fn main() anyerror!void {
     defer global_arena.deinit();
     const allocator = global_arena.allocator();
 
-    var vm = VM.init(allocator);
-    // var vm = VM.init(gpa.allocator());
-    defer vm.deinit();
+    var vm = VM.init(allocator, &repl_env);
+    // var vm = VM.init(gpa.allocator(), &repl_env);
 
     // REPL environment
     repl_env = Env.init(&vm, null);
-    try vm.addEnv(&repl_env);
+    defer repl_env.deinit();
+    defer vm.deinit();
 
     inline for (@typeInfo(@TypeOf(core.ns)).Struct.fields) |field| {
         try repl_env.set(field.name, try vm.makePrimitive(@field(core.ns, field.name)));

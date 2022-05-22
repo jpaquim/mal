@@ -449,23 +449,20 @@ pub const MalObject = struct {
 };
 
 pub const VM = struct {
-    const init_obj_num_max = 8;
+    const init_obj_num_max = 200;
 
     allocator: Allocator,
-    envs: std.ArrayList(*Env),
+    env: *Env,
     first_object: ?*MalObject = null,
     num_objects: i32 = 0,
     max_objects: i32 = init_obj_num_max,
 
-    pub fn init(allocator: Allocator) VM {
-        return .{ .allocator = allocator, .envs = std.ArrayList(*Env).init(allocator) };
+    pub fn init(allocator: Allocator, env: *Env) VM {
+        return .{ .allocator = allocator, .env = env };
     }
 
     pub fn deinit(vm: *VM) void {
         vm.sweep();
-        for (vm.envs.items) |env| {
-            env.deinit();
-        }
     }
 
     pub fn addEnv(vm: *VM, env: *Env) !void {
@@ -484,11 +481,9 @@ pub const VM = struct {
     }
 
     pub fn markAll(vm: *VM) void {
-        for (vm.envs.items) |env| {
-            var it = env.data.iterator();
-            while (it.next()) |entry| {
-                entry.value_ptr.*.mark();
-            }
+        var it = vm.env.data.valueIterator();
+        while (it.next()) |value_ptr| {
+            value_ptr.*.mark();
         }
     }
 
@@ -509,7 +504,7 @@ pub const VM = struct {
     }
 
     pub fn make(vm: *VM, value: MalValue) !*MalObject {
-        if (vm.num_objects == vm.max_objects) vm.gc();
+        // if (vm.num_objects == vm.max_objects) vm.gc();
 
         var object = try vm.allocator.create(MalObject);
         object.* = .{
