@@ -2,7 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const types = @import("./types.zig");
-const MalType = types.MalType;
+const MalObject = types.MalObject;
+const MalValue = types.MalValue;
+const VM = types.VM;
 const replaceMultipleOwned = @import("./utils.zig").replaceMultipleOwned;
 
 const Token = []const u8;
@@ -47,9 +49,9 @@ pub const ReadError = error{
     TokensPastFormEnd,
 } || Allocator.Error;
 
-pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
+pub fn read_str(vm: *VM, input: []const u8) !*MalObject {
     // tokenize input string into token list
-    const tokens = try tokenize(allocator, input);
+    const tokens = try tokenize(vm.allocator, input);
     // check if there are no tokens in which case we throw a special error to
     // continue the main REPL loop
     if (tokens.items.len == 0 or tokens.items.len == 1 and tokens.items[0][0] == ';') {
@@ -59,7 +61,7 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     // create a Reader instance with the tokens list
     var reader = Reader.init(tokens);
     // read a mal form
-    const form = (try read_form(allocator, &reader)) orelse return error.EndOfInput;
+    const form = (try read_form(vm, &reader)) orelse return error.EndOfInput;
     // check if there are still remaining tokens after the form is read
     if (reader.peek()) |token| blk: {
         // check if the token is a comment, in which case there is no error
@@ -73,19 +75,19 @@ pub fn read_str(allocator: Allocator, input: []const u8) !*MalType {
     return form;
 }
 
-fn readerMacro(allocator: Allocator, reader: *Reader, symbol: []const u8) !*MalType {
-    const prefix = try MalType.makeSymbol(allocator, symbol);
-    const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-    return MalType.makeList(allocator, &.{ prefix, form });
+fn readerMacro(vm: *VM, reader: *Reader, symbol: []const u8) !*MalObject {
+    const prefix = try vm.makeSymbol(symbol);
+    const form = (try read_form(vm, reader)) orelse return error.EndOfInput;
+    return vm.makeList(&.{ prefix, form });
 }
 
-fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
+fn read_form(vm: *VM, reader: *Reader) ReadError!?*MalObject {
     while (true) {
         if (reader.peek()) |token|
             switch (token[0]) {
-                '(' => return read_list(allocator, reader, .list),
-                '[' => return read_list(allocator, reader, .vector),
-                '{' => return read_list(allocator, reader, .hash_map),
+                '(' => return read_list(vm, reader, .list),
+                '[' => return read_list(vm, reader, .vector),
+                '{' => return read_list(vm, reader, .hash_map),
                 ')', ']', '}' => return null,
                 // skip over comment tokens
                 ';' => {
@@ -96,36 +98,36 @@ fn read_form(allocator: Allocator, reader: *Reader) ReadError!?*MalType {
                 // @form => (deref form)
                 '@' => {
                     _ = reader.next();
-                    return readerMacro(allocator, reader, "deref");
+                    return readerMacro(vm, reader, "deref");
                 },
                 // 'form => (quote form)
                 '\'' => {
                     _ = reader.next();
-                    return readerMacro(allocator, reader, "quote");
+                    return readerMacro(vm, reader, "quote");
                 },
                 // `form => (quasiquote form)
                 '`' => {
                     _ = reader.next();
-                    return readerMacro(allocator, reader, "quasiquote");
+                    return readerMacro(vm, reader, "quasiquote");
                 },
                 // ~form => (unquote form)
                 // ~@form => (splice-unquote form)
                 '~' => {
                     _ = reader.next();
                     if (std.mem.eql(u8, token, "~@")) {
-                        return readerMacro(allocator, reader, "splice-unquote");
+                        return readerMacro(vm, reader, "splice-unquote");
                     }
-                    return readerMacro(allocator, reader, "unquote");
+                    return readerMacro(vm, reader, "unquote");
                 },
                 // ^metadata form => (with-meta form metadata)
                 '^' => {
                     _ = reader.next();
-                    const prefix = try MalType.makeSymbol(allocator, "with-meta");
-                    const metadata_form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                    const form = (try read_form(allocator, reader)) orelse return error.EndOfInput;
-                    return MalType.makeList(allocator, &.{ prefix, form, metadata_form });
+                    const prefix = try vm.makeSymbol("with-meta");
+                    const metadata_form = (try read_form(vm, reader)) orelse return error.EndOfInput;
+                    const form = (try read_form(vm, reader)) orelse return error.EndOfInput;
+                    return vm.makeList(&.{ prefix, form, metadata_form });
                 },
-                else => return read_atom(allocator, reader),
+                else => return read_atom(vm, reader),
             }
         else
             return error.EndOfInput;
@@ -138,13 +140,13 @@ const ListType = enum {
     hash_map,
 };
 
-fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalType {
+fn read_list(vm: *VM, reader: *Reader, list_type: ListType) !*MalObject {
     // skip over the first '(', '[', '{' token in the list
     _ = reader.next();
-    var list = std.ArrayList(*MalType).init(allocator);
+    var list = std.ArrayList(*MalObject).init(vm.allocator);
     // read the next forms until a matching ')', ']', '}' is found, or error otherwise
-    var err_form = read_form(allocator, reader);
-    while (err_form) |opt_form| : (err_form = read_form(allocator, reader)) {
+    var err_form = read_form(vm, reader);
+    while (err_form) |opt_form| : (err_form = read_form(vm, reader)) {
         if (opt_form) |form| {
             // push valid forms into array list
             try list.append(form);
@@ -157,13 +159,13 @@ fn read_list(allocator: Allocator, reader: *Reader, list_type: ListType) !*MalTy
     // skip over the last ')', ']', '}' token in the list
     _ = reader.next();
     switch (list_type) {
-        .list => return MalType.makeList(allocator, list.items),
-        .vector => return MalType.makeVector(allocator, list),
-        .hash_map => return MalType.makeHashMap(allocator, list.items),
+        .list => return vm.makeList(list.items),
+        .vector => return vm.makeVector(list),
+        .hash_map => return vm.makeHashMap(list.items),
     }
 }
 
-fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
+fn read_atom(vm: *VM, reader: *Reader) !*MalObject {
     const result = if (reader.next()) |token|
         if (std.mem.eql(u8, token, "nil"))
             .nil
@@ -171,18 +173,18 @@ fn read_atom(allocator: Allocator, reader: *Reader) !*MalType {
             .t
         else if (std.mem.eql(u8, token, "false"))
             .f
-        else if (token[0] == '"') MalType{
-            .string = try replaceEscapeSequences(allocator, token[1 .. token.len - 1]),
-        } else if (token[0] == ':') MalType{
-            .keyword = try MalType.addKeywordPrefix(allocator, token[1..]),
-        } else if (std.fmt.parseInt(i64, token, 10)) |int| MalType{
+        else if (token[0] == '"') MalValue{
+            .string = try replaceEscapeSequences(vm.allocator, token[1 .. token.len - 1]),
+        } else if (token[0] == ':') MalValue{
+            .keyword = try MalValue.addKeywordPrefix(vm.allocator, token[1..]),
+        } else if (std.fmt.parseInt(i64, token, 10)) |int| MalValue{
             .number = int,
-        } else |_| MalType{
-            .symbol = try allocator.dupe(u8, token),
+        } else |_| MalValue{
+            .symbol = try vm.allocator.dupe(u8, token),
         }
     else
         return error.EndOfInput;
-    return MalType.make(allocator, result);
+    return vm.make(result);
 }
 
 fn replaceEscapeSequences(allocator: Allocator, str: []const u8) ![]const u8 {

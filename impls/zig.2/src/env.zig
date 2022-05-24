@@ -1,41 +1,37 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 
-const MalType = @import("./types.zig").MalType;
+const types = @import("./types.zig");
+const MalObject = types.MalObject;
+const VM = types.VM;
+
+pub const Data = std.StringHashMap(*MalObject);
 
 pub const Env = struct {
-    const Key = []const u8;
-    const Value = MalType;
-    // TODO: use AutoHashMap or other HashMap variant?
-    const Data = std.StringHashMap(*MalType);
-
-    const Self = @This();
-
-    outer: ?*const Self,
+    outer: ?*const Env,
     data: Data,
-    children: std.ArrayList(*Self),
+    vm: *VM,
 
-    pub fn init(allocator: Allocator, outer: ?*const Env) Self {
+    pub fn init(vm: *VM, outer: ?*const Env) Env {
         return .{
             .outer = outer,
-            .data = Data.init(allocator),
-            .children = std.ArrayList(*Self).init(allocator),
+            .data = Data.init(vm.allocator),
+            .vm = vm,
         };
     }
 
-    pub fn initCapacity(allocator: Allocator, outer: ?*const Env, size: u32) !Self {
-        var self = Self.init(allocator, outer);
+    pub fn initCapacity(vm: *VM, outer: ?*const Env, size: u32) !Env {
+        var self = Env.init(vm, outer);
         try self.data.ensureTotalCapacity(size);
         return self;
     }
 
-    pub fn initBindExprs(allocator: Allocator, outer: ?*const Env, binds: []const Key, exprs: []*MalType) !Self {
+    pub fn initBindExprs(vm: *VM, outer: ?*const Env, binds: []const []const u8, exprs: []*MalObject) !Env {
         // std.debug.assert(binds.len == exprs.len);
-        var self = try Self.initCapacity(allocator, outer, @intCast(u32, binds.len));
+        var self = try Env.initCapacity(vm, outer, @intCast(u32, binds.len));
         for (binds) |symbol, i| {
             if (std.mem.eql(u8, symbol, "&")) {
                 const rest_symbol = binds[i + 1];
-                try self.set(rest_symbol, try MalType.makeList(allocator, exprs[i..]));
+                try self.set(rest_symbol, try vm.makeList(exprs[i..]));
                 break;
             }
             try self.set(symbol, exprs[i]);
@@ -43,12 +39,7 @@ pub const Env = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self) void {
-        for (self.children.items) |child| {
-            child.deinit();
-            self.data.allocator.destroy(child);
-        }
-        self.children.deinit();
+    pub fn deinit(self: *Env) void {
         var it = self.data.iterator();
         while (it.next()) |entry| {
             // free copied hash map keys
@@ -58,23 +49,19 @@ pub const Env = struct {
         self.* = undefined;
     }
 
-    pub fn initChild(self: *Self) !*Self {
-        const allocator = self.data.allocator;
-        var child_ptr = try allocator.create(Self);
-        child_ptr.* = Self.init(allocator, self);
-        try self.children.append(child_ptr);
+    pub fn initChild(self: *Env) !*Env {
+        var child_ptr = try self.vm.allocator.create(Env);
+        child_ptr.* = Env.init(self.vm, self);
         return child_ptr;
     }
 
-    pub fn initChildBindExprs(self: *Self, binds: []const Key, exprs: []*MalType) !*Self {
-        const allocator = self.data.allocator;
-        var child_ptr = try allocator.create(Self);
-        child_ptr.* = try Self.initBindExprs(allocator, self, binds, exprs);
-        try self.children.append(child_ptr);
+    pub fn initChildBindExprs(self: *Env, binds: []const []const u8, exprs: []*MalObject) !*Env {
+        var child_ptr = try self.vm.allocator.create(Env);
+        child_ptr.* = try Env.initBindExprs(self.vm, self, binds, exprs);
         return child_ptr;
     }
 
-    pub fn set(self: *Self, symbol: Key, value: *MalType) !void {
+    pub fn set(self: *Env, symbol: []const u8, value: *MalObject) !void {
         const allocator = self.data.allocator;
 
         const get_or_put = try self.data.getOrPut(symbol);
@@ -90,13 +77,13 @@ pub const Env = struct {
         get_or_put.value_ptr.* = value;
     }
 
-    pub fn find(self: *const Self, symbol: Key) ?*const Self {
+    pub fn find(self: *const Env, symbol: []const u8) ?*const Env {
         return if (self.data.contains(symbol))
             self
         else if (self.outer) |outer| outer.find(symbol) else null;
     }
 
-    pub fn get(self: Self, symbol: Key) !*MalType {
+    pub fn get(self: Env, symbol: []const u8) !*MalObject {
         return if (self.find(symbol)) |env|
             env.data.get(symbol) orelse unreachable
         else
